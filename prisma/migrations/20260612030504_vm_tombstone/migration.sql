@@ -1,0 +1,9 @@
+-- CreateTable
+CREATE TABLE "VmTombstone" (
+    "vmid" INTEGER NOT NULL,
+    "attempts" INTEGER NOT NULL DEFAULT 1,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "lastTriedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "VmTombstone_pkey" PRIMARY KEY ("vmid")
+);

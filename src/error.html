@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>%sveltekit.status% · ari</title>
+		<script>
+			(function () {
+				try {
+					var saved = localStorage.getItem('ari-theme');
+					var dark = saved
+						? saved === 'dark'
+						: window.matchMedia('(prefers-color-scheme: dark)').matches;
+					document.documentElement.classList.toggle('dark', dark);
+				} catch (e) {}
+			})();
+		</script>
+		<style>
+			:root {
+				color-scheme: light;
+				--bg: #dededf;
+				--surface-2: #ececef;
+				--text: #1d1d22;
+				--text-2: #56565f;
+				--text-3: #82828a;
+				--primary: #ec3750;
+			}
+			:root.dark {
+				color-scheme: dark;
+				--bg: #121217;
+				--surface-2: #23232e;
+				--text: #f4f4f8;
+				--text-2: #b6b6c6;
+				--text-3: #7e7e92;
+				--primary: #ff4a63;
+			}
+			* {
+				box-sizing: border-box;
+			}
+			html,
+			body {
+				margin: 0;
+				height: 100%;
+			}
+			body {
+				background: var(--bg);
+				color: var(--text);
+				font-family:
+					'Hanken Grotesk',
+					ui-sans-serif,
+					system-ui,
+					-apple-system,
+					'Segoe UI',
+					Roboto,
+					sans-serif;
+				letter-spacing: -0.01em;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				padding: 40px 24px;
+				-webkit-font-smoothing: antialiased;
+			}
+			.mono {
+				font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+			}
+			.glow {
+				position: fixed;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				height: 58%;
+				pointer-events: none;
+				background: linear-gradient(
+					to top,
+					color-mix(in srgb, var(--primary) 26%, transparent) 0%,
+					color-mix(in srgb, var(--primary) 9%, transparent) 46%,
+					transparent 100%
+				);
+			}
+			.glow-dots {
+				position: fixed;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				height: 58%;
+				pointer-events: none;
+				background-image: radial-gradient(
+					circle at 1px 1px,
+					color-mix(in srgb, var(--primary) 18%, transparent) 1.5px,
+					transparent 0
+				);
+				background-size: 26px 26px;
+				-webkit-mask-image: linear-gradient(to top, #000 0%, transparent 80%);
+				mask-image: linear-gradient(to top, #000 0%, transparent 80%);
+			}
+			.wrap {
+				position: relative;
+				width: 100%;
+				max-width: 520px;
+			}
+			.flag {
+				display: block;
+				height: 30px;
+				margin-bottom: 22px;
+			}
+			.readout {
+				font-size: 12px;
+				color: var(--text-3);
+				margin: 0 0 16px;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.cursor {
+				display: inline-block;
+				width: 6px;
+				height: 12px;
+				margin-left: 5px;
+				vertical-align: -1px;
+				background: var(--primary);
+				animation: blink 1.1s steps(2, jump-none) infinite;
+			}
+			@keyframes blink {
+				50% {
+					opacity: 0;
+				}
+			}
+			@media (prefers-reduced-motion: reduce) {
+				.cursor {
+					animation: none;
+				}
+			}
+			.status {
+				font-size: clamp(58px, 15vw, 84px);
+				font-weight: 700;
+				line-height: 1;
+				letter-spacing: -0.05em;
+				user-select: none;
+				margin-bottom: 14px;
+				color: var(--primary);
+				background-image: repeating-linear-gradient(
+					-45deg,
+					var(--primary) 0 7px,
+					color-mix(in srgb, var(--primary) 55%, var(--bg)) 7px 9px
+				);
+				-webkit-background-clip: text;
+				background-clip: text;
+				-webkit-text-fill-color: transparent;
+			}
+			h1 {
+				font-size: 22px;
+				font-weight: 700;
+				letter-spacing: -0.025em;
+				margin: 0 0 6px;
+			}
+			.sub {
+				font-size: 15px;
+				line-height: 1.55;
+				color: var(--text-2);
+				margin: 0;
+			}
+			.actions {
+				margin-top: 22px;
+			}
+			a.btn {
+				display: inline-flex;
+				align-items: center;
+				gap: 7px;
+				background: var(--primary);
+				color: #fff;
+				text-decoration: none;
+				font-weight: 700;
+				font-size: 13px;
+				line-height: 1;
+				padding: 9px 15px;
+				border-radius: 999px;
+			}
+			a.btn:focus-visible {
+				outline: 2px solid var(--primary);
+				outline-offset: 2px;
+			}
+			.foot {
+				font-size: 11.5px;
+				font-weight: 600;
+				color: var(--text-3);
+				line-height: 1.5;
+				margin: 16px 0 0;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="glow"></div>
+		<div class="glow-dots"></div>
+		<main class="wrap">
+			<img class="flag" src="/flag.png" alt="Hack Club" />
+			<p class="readout mono">
+				<span id="path"></span><span class="cursor" aria-hidden="true"></span>
+			</p>
+			<div class="status mono">%sveltekit.status%</div>
+			<h1>Something went wrong</h1>
+			<p class="sub">%sveltekit.error.message%</p>
+			<div class="actions">
+				<a class="btn" href="/programs">Back to programs &rarr;</a>
+			</div>
+			<p class="foot">If this keeps happening, contact your program organizer.</p>
+		</main>
+		<script>
+			document.getElementById('path').textContent = location.pathname;
+		</script>
+	</body>
+</html>

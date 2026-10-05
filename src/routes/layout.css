@@ -1,0 +1,172 @@
+/* font @import must come before tailwind: it expands inline and would leave this after real rules */
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;0,800;1,500&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+/* no utilities layer: a scoped class named like a utility (fixed, hidden, grid) would pick up its declarations */
+@layer theme, base;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/preflight.css' layer(base);
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+	color-scheme: light;
+	--bg: #dededf;
+	--surface: #f4f4f6;
+	--surface-2: #ececef;
+	--surface-3: #e3e3e8;
+	--border: #dededf;
+	--border-2: #cccccf;
+	--text: #1d1d22;
+	--text-2: #56565f;
+	--text-3: #82828a;
+	--primary: #ec3750;
+	--primary-soft: #fdecef;
+	--ring: rgba(236, 55, 80, 0.32);
+
+	/* the brand brights fall below readable contrast on white, so light deepens them to ~4.5:1 */
+	--accent-red: #d22e47;
+	--accent-orange: #c2620a;
+	--accent-yellow: #a87b00;
+	--accent-green: #0f8a5f;
+	--accent-cyan: #15788c;
+	--accent-blue: #1f6dbf;
+	--accent-purple: #8a27b8;
+
+	--shadow-sm: 0 1px 2px rgba(24, 24, 27, 0.05);
+	--shadow: 0 1px 2px rgba(24, 24, 27, 0.05), 0 10px 30px rgba(24, 24, 27, 0.07);
+	--shadow-lg: 0 24px 60px rgba(24, 24, 27, 0.14);
+
+	--grad: linear-gradient(165deg, #ee415a 0%, #e22f49 60%, #cf2942 100%);
+	--grad-soft: linear-gradient(165deg, rgba(236, 55, 80, 0.08), rgba(236, 55, 80, 0.03));
+}
+
+.dark {
+	color-scheme: dark;
+	--bg: #121217;
+	--surface: #18181f;
+	--surface-2: #23232e;
+	--surface-3: #2b2b38;
+	--border: #31313d;
+	--border-2: #3c3c4a;
+	--text: #f4f4f8;
+	--text-2: #b6b6c6;
+	--text-3: #9494a8;
+	--primary: #ff4a63;
+	--primary-soft: rgba(236, 55, 80, 0.16);
+	--ring: rgba(255, 74, 99, 0.4);
+
+	--accent-red: #ec3750;
+	--accent-orange: #ff8c37;
+	--accent-yellow: #f1c40f;
+	--accent-green: #33d6a6;
+	--accent-cyan: #5bc0de;
+	--accent-blue: #338eda;
+	--accent-purple: #a633d6;
+
+	--shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+	--shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 14px 38px rgba(0, 0, 0, 0.5);
+	--shadow-lg: 0 28px 70px rgba(0, 0, 0, 0.6);
+}
+
+@theme inline static {
+	--font-sans: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+	--color-bg: var(--bg);
+	--color-surface: var(--surface);
+	--color-surface-2: var(--surface-2);
+	--color-surface-3: var(--surface-3);
+	--color-border: var(--border);
+	--color-border-2: var(--border-2);
+	--color-text: var(--text);
+	--color-text-2: var(--text-2);
+	--color-text-3: var(--text-3);
+	--color-primary: var(--primary);
+	--color-primary-soft: var(--primary-soft);
+
+	--color-red: var(--accent-red);
+	--color-orange: var(--accent-orange);
+	--color-yellow: var(--accent-yellow);
+	--color-green: var(--accent-green);
+	--color-cyan: var(--accent-cyan);
+	--color-blue: var(--accent-blue);
+	--color-purple: var(--accent-purple);
+}
+
+html,
+body {
+	margin: 0;
+	height: 100%;
+	background: var(--bg);
+}
+body {
+	font-family: var(--font-sans);
+	color: var(--text);
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+	letter-spacing: -0.01em;
+}
+a {
+	color: inherit;
+}
+
+:root {
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-5: 24px;
+	--space-6: 32px;
+	--space-7: 48px;
+
+	--radius-sm: 7px;
+	--radius-md: 10px;
+	--radius-lg: 14px;
+	--radius-full: 999px;
+
+	--text-xs: 11.5px;
+	--text-sm: 13px;
+	--text-md: 15px;
+	--text-lg: 17px;
+	--text-xl: 22px;
+	--text-2xl: 30px;
+
+	--control-sm: 30px;
+	--control-md: 34px;
+	--control-lg: 42px;
+
+	--layer-sticky: 10;
+	--layer-header: 15;
+	--layer-dropdown: 20;
+	--layer-dialog: 40;
+	--layer-toast: 60;
+
+	--status-pending: #b06a00;
+	--status-approved: #0f8a5f;
+	--status-changes: #c2410c;
+	--status-rejected: #c32b46;
+	--status-secondpass: #6d4bd0;
+	--status-fraudreview: #b02d84;
+	--status-neutral: var(--text-2);
+	--on-primary: #fff;
+	--on-ok: #fff;
+}
+.dark {
+	--status-pending: #f7d774;
+	--status-approved: #5fe3bb;
+	--status-changes: #ffae72;
+	--status-rejected: #ff8095;
+	--status-secondpass: #b9a3f5;
+	--status-fraudreview: #f393ce;
+	--on-ok: #06231a;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 4px var(--ring);
+}

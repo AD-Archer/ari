@@ -1,0 +1,31 @@
+.docShell {
+	--doc-measure: 760px;
+	--doc-nav-width: 244px;
+	--doc-line: color-mix(in srgb, var(--text-3) 22%, transparent);
+	--doc-line-soft: color-mix(in srgb, var(--text-3) 13%, transparent);
+}
+
+.docProse {
+	max-width: 40em;
+	margin: var(--space-3) 0 0;
+	font-size: var(--text-md);
+	line-height: 1.65;
+	color: var(--text-2);
+}
+
+.docShell code {
+	padding: 1.5px var(--space-2);
+	border-radius: var(--radius-sm);
+	background: color-mix(in srgb, var(--text-3) 16%, transparent);
+	color: var(--text);
+	font-family: var(--font-mono);
+	font-size: 0.86em;
+	white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+	.docShell code {
+		white-space: normal;
+		word-break: break-word;
+	}
+}

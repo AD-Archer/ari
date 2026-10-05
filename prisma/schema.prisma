@@ -1,0 +1,1095 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// A reviewer/organizer who logs in via Hack Club SSO.
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  name            String
+  /// Where `name` came from. HCA's legal name is never used (it can deadname):
+  /// SLACK refreshes from the Slack display name at login, PENDING prompts the
+  /// user once for a preferred name, CUSTOM is that user-typed stand-in - kept
+  /// only until a login where Slack resolves a display name again.
+  nameSource      NameSource       @default(SLACK)
+  avatarColor     String
+  orgPermissions  OrgPermission[]  @default([])
+  createdAt       DateTime         @default(now())
+  lastSeenAt      DateTime         @default(now())
+  slackId         String?
+  account         Account?
+  drafts          Draft[]
+  memberships     Membership[]
+  reviews         Review[]
+  reviewerVms     ReviewerVm[]
+  reviewerReauths ReviewerReauth[]
+  submissionOpens SubmissionOpen[]
+  claimedReviews  Submission[]     @relation("ClaimedReviews")
+  sessions        Session[]
+  mcpTokens       McpToken[]
+  mcpAuthCodes    McpAuthCode[]
+  notesAbout      ReviewerNote[]   @relation("NotesAbout")
+  notesAuthored   ReviewerNote[]   @relation("NotesBy")
+}
+
+/// One-time OAuth authorization code for the MCP connector flow (claude.ai).
+/// Persisted (not in-memory) so the authorize→token round-trip survives restarts
+/// and multiple app instances. Holds only the SHA256 of the code; consumed (and
+/// deleted) at /oauth/token, which then mints a real McpToken. Expires in minutes.
+model McpAuthCode {
+  id            String   @id @default(cuid())
+  codeHash      String   @unique
+  userId        String
+  canWrite      Boolean  @default(false)
+  codeChallenge String
+  redirectUri   String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Bearer token for the org MCP server.
+/// Session-free machine auth: the raw token (shown once at mint) is
+/// `ari_mcp_<base64url>`; we store only its SHA256 hash, like Session. Every
+/// request re-checks the owning user still holds MANAGE_MCP + OPERATE_ALL_PROGRAMS,
+/// so revoking either permission instantly kills their tokens.
+model McpToken {
+  id         String    @id @default(cuid())
+  /// SHA256 hex of the raw token; the raw value is never stored.
+  tokenHash  String    @unique
+  userId     String
+  /// Human label so an admin can tell tokens apart in the Admin → MCP list.
+  label      String
+  last4      String
+  /// Read-only by default. When true, the token may call the write tools
+  /// (add/remove members, set org permissions, dismiss flags).
+  canWrite   Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime?
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Encrypted Hack Club OAuth tokens, 1:1 with User.
+model Account {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  hackClubUserId  String?  @unique
+  accessTokenEnc  String
+  refreshTokenEnc String
+  scope           String
+  expiresAt       DateTime
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// DB-backed opaque session. Cookie holds the raw id; we store its hash.
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Invite-gate: an email may be admitted (with optional program + permissions) before first login.
+model Invite {
+  id             String              @id @default(cuid())
+  email          String
+  /// Org permissions to grant on the user created at acceptance. Attaching any
+  /// requires the inviter to hold GRANT_ORG_PERMS (and only what they hold).
+  orgPermissions OrgPermission[]     @default([])
+  programId      String?
+  /// Program permissions to grant on the membership created at acceptance. Empty = plain reviewer.
+  permissions    ProgramPermission[] @default([])
+  createdAt      DateTime            @default(now())
+  acceptedAt     DateTime?
+  tracks         Track[]             @default([software])
+
+  @@index([email])
+}
+
+model Program {
+  id                               String             @id @default(cuid())
+  name                             String
+  color                            String
+  iconUrl                          String?
+  cardBgUrl                        String?
+  status                           ProgramStatus      @default(ACTIVE)
+  accepts                          Evidence[]
+  createdAt                        DateTime           @default(now())
+  trackingStartsAt                 DateTime?
+  /// Per-reviewer weekly review target (rolling 7-day window). Drives the goal
+  /// progress bar on the reviewers roster and the review screen's top bar.
+  weeklyReviewGoal                 Int                @default(50)
+  /// Opt-in: ships may carry a `collaborators` array (multiple people, each
+  /// with their own verified time). Off = collaborators in the payload are a
+  /// 422 at ingest.
+  collaborative                    Boolean            @default(false)
+  /// Opt-in: reviewers may launch a disposable VM (linux/windows/android) from
+  /// the review screen to run the project hands-on. The VM is torn down when
+  /// the ship is decided.
+  allowVms                         Boolean            @default(false)
+  /// Opt-in master gate: when on, a reviewer's decision doesn't fire the outbound
+  /// webhook on its own - it parks the ship in `secondpass` for an organizer to
+  /// confirm or send back to the queue. Off = decisions notify the program immediately
+  /// (the default flow). System auto-rejections (ingest screening) are never gated.
+  /// Which decision kinds get held is configured per-kind below (only applies when on).
+  secondPass                       Boolean            @default(false)
+  /// Per-kind second-pass gating (only consulted when `secondPass` is on). Each
+  /// controls whether a reviewer decision of that kind parks in `secondpass`
+  /// instead of notifying the program. All on by default = the original behaviour
+  /// where enabling second pass holds every decision.
+  secondPassApproved               Boolean            @default(true)
+  secondPassChanges                Boolean            @default(true)
+  secondPassRejected               Boolean            @default(true)
+  /// On by default (only consulted when `secondPass` is on): an organizer's or org
+  /// admin's own decision in the normal queue skips the second-pass hold and fires
+  /// the outbound webhook immediately, instead of parking in `secondpass`. A plain
+  /// reviewer's decision is still held.
+  secondPassOrganizerBypass        Boolean            @default(true)
+  /// On by default: auto-reject a ship at ingest when a maker hasn't verified
+  /// their Hack Club identity (on a shared ship, every collaborator must pass).
+  /// Organizers can turn this off per program to stop the identity auto-reject.
+  screenIdentity                   Boolean            @default(true)
+  /// On by default: auto-reject a ship at ingest when a maker is fails the
+  /// Hackatime screen. Organizers can turn this
+  /// off per program to stop the Hackatime auto-reject.
+  screenHackatime                  Boolean            @default(true)
+  /// Opt-in conflict-of-interest gate: when on, a reviewer cannot see or open a
+  /// ship they are a maker on (solo or collaborator), matched by email
+  /// (case-insensitive) or Slack id. Own ships drop from the queue/overview/search
+  /// and the review screen 403s on a direct URL. Applies to everyone - it only ever
+  /// hides a person's OWN ships from themselves.
+  reviewersCannotReviewOwnProjects Boolean            @default(false)
+  /// On by default: reviewers (and organizers in second pass) may deflate verified
+  /// hours - both per-item evidence deflations and the flat "deflate hours" amount.
+  /// Off = deflation is disabled program-wide: the deflation UI is hidden and the
+  /// decision/confirm paths settle every ship to its full captured time, ignoring any
+  /// adjustments or deflate amount a client tries to post.
+  allowDeflation                   Boolean            @default(true)
+  /// Opt-in: collect the YSWS handbook's Override Hours Spent Justification (see
+  /// src/lib/server/justification.ts). On = reviewers must name the technical features
+  /// that account for the hours to approve, and must say why whenever they deflate; the
+  /// evidence behind the hours (Hackatime projects and dates, submitter id, timelapses)
+  /// rides along in the outbound `review.justification`. Off = the legacy flow: a note
+  /// to the maker and an internal audit note, and no justification in the payload.
+  /// On by default for every program (policy since 8/2026): reviews collect the
+  /// handbook's Override Hours Spent Justification. Turning it OFF is an org-admin
+  /// action (MANAGE_PROGRAMS), enforced in the settings save action.
+  hoursJustification               Boolean            @default(true)
+  /// Opt-in: makers may request priority review of their own queued ships through
+  /// a public form (/priority/{priorityReviewToken}) after verifying themselves with
+  /// Hack Club Auth. Priority ships sort ahead of the rest of the queue and the
+  /// outbound payload carries `priority` so the program can act on it.
+  priorityReview                   Boolean            @default(false)
+  /// Organizer-written message shown to makers at the top of the priority form.
+  priorityReviewMessage            String?
+  /// Secret path token forming the public form URL (/priority/{token}) - unguessable,
+  /// it is the only gate before Hack Club Auth. Minted when priority review is first
+  /// enabled and kept stable across toggles, so a shared link keeps working.
+  priorityReviewToken              String?            @unique
+  /// Opt-in step-up auth: when on, anyone opening a ship to review it (claiming an open
+  /// ship) must first complete a fresh Hack Club Auth prompt=login round-trip - applies
+  /// to reviewers, organizers, and org admins alike. The grant slides forward while they
+  /// keep reviewing (heartbeat) and lapses after reviewerReauthTtlMinutes of inactivity;
+  /// pressing Finish session ends it at once, so the next sitting re-prompts. See
+  /// src/lib/server/reauth.ts.
+  reviewerReauth                   Boolean            @default(false)
+  /// Inactivity window (minutes) before a reviewer's step-up reauth grant lapses. Only
+  /// consulted when reviewerReauth is on.
+  reviewerReauthTtlMinutes         Int                @default(60)
+  /// External fraud review. Off by default. The method names where it sits in the
+  /// program pipeline.
+  fraudReviewMethod                FraudReviewMethod  @default(off)
+  /// Event id ships are filed under at the external fraud-review service.
+  fraudEventId                     String?
+  /// Fraud-review API key, AES-256-GCM encrypted at rest like WebhookSecret/outbound.
+  fraudApiKeyEnc                   String?
+  /// Masked last 4 of the fraud-review API key for display in settings.
+  fraudApiKeyLast4                 String?
+  /// Secret path token for the fraud-review outcome webhook. Minted when fraud
+  /// review is first enabled; kept stable across method toggles.
+  fraudWebhookToken                String?            @unique
+  /// Signing secret for this program's fraud-review outcome webhook, AES-256-GCM
+  /// encrypted like fraudApiKeyEnc. Null when the service issues none.
+  fraudWebhookSecretEnc            String?
+  /// Slack channel id of this program's designated reviewers channel. When set,
+  /// the bot (Ari Services) invites members into it when they join the program
+  /// (plus a roster backfill when the channel is first configured) and kicks
+  /// them when they leave. The bot must be in the channel for that to work -
+  /// the settings page checks its presence and asks the organizer to /invite it.
+  reviewersChannelId               String?
+  activity                         ActivityEvent[]
+  checklist                        ChecklistItem[]
+  fraudChecks                      FraudCheck[]
+  flagRules                        FlagRule[]
+  memberships                      Membership[]
+  outboundDeliveries               OutboundDelivery[]
+  outboundEndpoint                 OutboundEndpoint?
+  reviewFields                     ReviewField[]
+  reviewerVms                      ReviewerVm[]
+  reviewerReauths                  ReviewerReauth[]
+  snippets                         Snippet[]
+  submissions                      Submission[]
+  deliveries                       WebhookDelivery[]
+  webhookSecrets                   WebhookSecret[]
+}
+
+/// A disposable review VM launched from the review screen (program opt-in via
+/// Program.allowVms). One per (submission, reviewer) - relaunching a different
+/// OS replaces it. Deleted via the VM platform API when the ship is decided or
+/// the reviewer stops it; the row is the seam that lets the server tear it down.
+model ReviewerVm {
+  id             String     @id @default(cuid())
+  submissionId   String
+  reviewerId     String
+  programId      String
+  /// Proxmox VM id from the platform - the handle DELETE /vms/:vmid needs.
+  vmid           Int
+  /// linux | windows | android.
+  vmType         String
+  name           String
+  /// Guacamole browser URL (the "connect via web" path).
+  guacUrl        String
+  /// rdp:// URI for a native client; null for android (browser-only).
+  rdpUri         String?
+  /// Per-VM RDP password, AES-256-GCM encrypted at rest (like WebhookSecret).
+  rdpPasswordEnc String?
+  createdAt      DateTime   @default(now())
+  program        Program    @relation(fields: [programId], references: [id], onDelete: Cascade)
+  reviewer       User       @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+  submission     Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, reviewerId])
+  @@index([reviewerId])
+}
+
+/// One "a reviewer opened this ship to review it" event - the per-ship review
+/// timeline's open history. Written on a genuine open (a fresh claim in
+/// claimSubmission), NOT on a heartbeat refresh or a same-session page reload, and
+/// only when the claim actually succeeds (a read-only peek at a ship someone else
+/// holds never claims, so never logs). Append-only; cascades with the submission.
+/// Distinct from Submission.claimedBy, which is only the CURRENT live holder.
+model SubmissionOpen {
+  id           String     @id @default(cuid())
+  submissionId String
+  reviewerId   String
+  openedAt     DateTime   @default(now())
+  /// When this review session ended - the reviewer's claim was released (finished /
+  /// navigated away / moved on), idle-reaped, or a decision was recorded. Null while the
+  /// session is still live. Stamped idempotently (the latest still-open session for the
+  /// reviewer), so overlapping release/move/reap/decide paths can't double-log.
+  closedAt     DateTime?
+  /// Why the session ended: 'left' (finished / navigated away / moved to another ship),
+  /// 'idle' (auto-reaped after CLAIM_TTL_MS with no heartbeat), or 'decided' (the reviewer
+  /// recorded a decision - the ship left the queue, it didn't go back up for grabs). Null
+  /// while live. See CloseReason in src/lib/server/claims.ts.
+  closeReason  String?
+  reviewer     User       @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId, openedAt])
+  @@index([reviewerId])
+}
+
+/// Step-up reauthentication grant: proof that a reviewer completed a forced Hack Club
+/// Auth prompt=login before reviewing in a program that requires it (Program.reviewerReauth).
+/// One per (reviewer, program). reauthAt is when the forced login round-trip last
+/// completed; lastActiveAt slides forward on review activity (a fresh claim + the review
+/// screen heartbeat). The grant is "fresh" while now - lastActiveAt < the program's
+/// reviewerReauthTtlMinutes; it is deleted outright when the reviewer presses Finish
+/// session, so the next sitting re-prompts. See src/lib/server/reauth.ts.
+model ReviewerReauth {
+  id           String   @id @default(cuid())
+  userId       String
+  programId    String
+  reauthAt     DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+  program      Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programId])
+  @@index([programId])
+}
+
+/// Durable retry marker for a VM whose platform DELETE we couldn't confirm - the
+/// platform was down/unreachable when the ship was decided (or reaped/relaunched), so
+/// the detached best-effort teardown left the machine running with its ReviewerVm row
+/// already gone. The VM-janitor sweep retries these until the platform confirms it's
+/// gone (DELETE 2xx or 404), then drops the row. Keyed by the platform-unique vmid.
+model VmTombstone {
+  vmid        Int      @id
+  attempts    Int      @default(1)
+  createdAt   DateTime @default(now())
+  lastTriedAt DateTime @default(now())
+}
+
+model Membership {
+  id          String              @id @default(cuid())
+  userId      String
+  programId   String
+  // Granular capabilities within this program. Empty = a plain reviewer (queue
+  // only, track-scoped). Org admins and the POC hold every permission implicitly,
+  // so this array is only meaningful for regular members. See ProgramPermission
+  // and src/lib/server/authz.ts (hasPermission).
+  permissions ProgramPermission[] @default([])
+  // The single top-of-hierarchy member for the program. Holds all permissions
+  // implicitly and is protected from other members (only org admins may edit or
+  // remove the POC). At most one row per program is true - enforced in the setPoc
+  // mutation, which unsets any prior POC in the same transaction.
+  isPoc       Boolean             @default(false)
+  tracks      Track[]             @default([software])
+  program     Program             @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, programId])
+}
+
+/// A private internal note POCs and org admins keep about a reviewer. Org-wide
+/// (not program-scoped) - readable and writable by any program POC or org admin,
+/// regardless of which programs they share with the subject. Surfaced only on the
+/// reviewer profile's Notes tab, never to the subject or plain reviewers.
+model ReviewerNote {
+  id        String   @id @default(cuid())
+  subjectId String // the reviewer the note is about
+  authorId  String // who wrote it
+  body      String
+  createdAt DateTime @default(now())
+  subject   User     @relation("NotesAbout", fields: [subjectId], references: [id], onDelete: Cascade)
+  author    User     @relation("NotesBy", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([subjectId, createdAt])
+}
+
+/// One active secret per program; roll = revoke + new.
+/// The secret is needed to recompute incoming HMACs, so it's stored
+/// AES-256-GCM encrypted (reversible), not hashed.
+model WebhookSecret {
+  id        String    @id @default(cuid())
+  programId String
+  last4     String
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+  secretEnc String
+  program   Program   @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+}
+
+/// Per-program destination ari POSTs review results to (outbound webhook).
+/// One config per program; its own signing secret (distinct from the inbound
+/// ingest secret) is stored AES-256-GCM encrypted, like WebhookSecret.
+model OutboundEndpoint {
+  id        String   @id @default(cuid())
+  programId String   @unique
+  url       String?
+  enabled   Boolean  @default(true)
+  secretEnc String?
+  last4     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+}
+
+model ChecklistItem {
+  id        String  @id @default(cuid())
+  programId String
+  order     Int
+  label     String
+  // Which tracks this requirement applies to. A reviewer only sees (and must
+  // tick) items whose tracks include the submission's track. Defaults to both
+  // so legacy items keep showing on every ship.
+  tracks    Track[] @default([software, hardware])
+  program   Program @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+}
+
+/// Organizer-authored response templates. Reviewers insert one into the
+/// note-to-maker box by typing /name - slash-command autocomplete.
+model Snippet {
+  id        String   @id @default(cuid())
+  programId String
+  /// Trigger (slug, no spaces): typing /name matches it.
+  name      String
+  body      String
+  createdAt DateTime @default(now())
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, name])
+}
+
+/// Organizer-defined custom review fields (replaces the fields.svelte.ts seed).
+model ReviewField {
+  id          String    @id @default(cuid())
+  programId   String
+  /// Display order on the review rail; organizer-draggable in settings.
+  order       Int       @default(0)
+  type        FieldType
+  label       String
+  /// Optional help text shown under the field to reviewers.
+  description String?
+  key         String
+  options     String[]
+  /// Reviewers must answer before recording a decision (checkbox = must be
+  /// ticked). Enforced server-side in the decide action.
+  required    Boolean   @default(false)
+  /// Which tracks this field applies to. A reviewer only sees (and, if
+  /// required, must answer) fields whose tracks include the submission's track.
+  /// Defaults to both so legacy fields keep showing on every ship.
+  tracks      Track[]   @default([software, hardware])
+  program     Program   @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId])
+}
+
+model FlagRule {
+  id        String   @id @default(cuid())
+  programId String
+  kind      FlagKind
+  enabled   Boolean  @default(false)
+  config    Json?
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, kind])
+}
+
+/// Ship submitter; identified by email, does not log in.
+/// PRIVACY: no hometown / age - reviewers must not see them, and we don't
+/// receive them (not in the webhook payload nor the OAuth scopes).
+model Maker {
+  id              String                   @id @default(cuid())
+  email           String                   @unique
+  name            String?
+  hackatimeUserId String?
+  slackId         String?
+  submissions     Submission[]
+  collaborations  SubmissionCollaborator[]
+  devlogs         Devlog[]
+  clips           ElapsedClip[]
+}
+
+/// One person on a collaborative ship + their own verified time. Rows exist
+/// only when the ingest payload carried `collaborators` (program opt-in);
+/// solo ships have none and keep reading Submission.maker. devlogMinutes is
+/// journal-derived at ingest; the rest land during enrichment.
+model SubmissionCollaborator {
+  id                      String     @id @default(cuid())
+  submissionId            String
+  makerId                 String
+  hackatimeMinutes        Int        @default(0)
+  devlogMinutes           Int        @default(0)
+  afterLastCommitMinutes  Int        @default(0)
+  lapseMinutes            Int        @default(0)
+  /// This person's share of the program-asserted "program-added" time (ingest
+  /// payload `collaborators[].program_hours`). NOT evidence-derived - the program
+  /// vouches for it; counted toward the verified total and reviewer-deflatable.
+  programMinutes          Int        @default(0)
+  /// This person's verified Hackatime time split by project, written by the
+  /// ari-webhooks capture: { "<project>": <minutes>, … } (post lapse-dedup, so the
+  /// values sum to hackatimeMinutes). Shows the reviewer which tracked project each
+  /// collaborator's time came from. Null on ships captured before the column existed.
+  hackatimeProjectMinutes Json?
+  // integer seconds; the minutes columns above are legacy and dual-written until cutover
+  hackatimeSeconds        Int        @default(0)
+  devlogSeconds           Int        @default(0)
+  afterLastCommitSeconds  Int        @default(0)
+  lapseSeconds            Int        @default(0)
+  programSeconds          Int        @default(0)
+  hackatimeProjectSeconds Json?
+  maker                   Maker      @relation(fields: [makerId], references: [id])
+  submission              Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, makerId])
+  @@index([makerId])
+}
+
+/// One ship of a project. `externalId` identifies the *project* (the program's
+/// stable id for it) - a project may be shipped many times, each accepted ship
+/// being its own row with an incrementing `version`. The invariant "a project
+/// can't ship while it's already on queue" (status processing/pending) is enforced
+/// at ingest plus a partial unique index on (programId, externalId) WHERE
+/// status IN ('processing','pending') - see the ships_per_project migration;
+/// Prisma's DSL can't express partial indexes.
+model Submission {
+  id                  String                   @id
+  programId           String
+  externalId          String
+  makerId             String
+  title               String
+  /// Maker-written project description (required at ingest going forward;
+  /// nullable for ships that predate the field).
+  description         String?
+  repoUrl             String
+  demoUrl             String?
+  claimedHours        Int
+  status              SubmissionStatus         @default(pending)
+  acceptedEvidence    Evidence[]
+  /// Canonical ship date. Backdatable via the ingest payload's `shipped_at`
+  /// (migrations) - it bounds the evidence window, so it is NOT a wall-clock
+  /// ingest time. Operational timing must use ingestedAt below.
+  receivedAt          DateTime                 @default(now())
+  /// Wall-clock moment the row was created. Never backdated: the stuck-
+  /// submission sweep measures "wedged in processing" from this, so a
+  /// backdated migration ship is not born >6h old and instantly reaped.
+  ingestedAt          DateTime                 @default(now())
+  /// Queue position: what the open queue sorts (and shows "waiting since") by.
+  /// Equals receivedAt for a fresh ship; a re-ship after "request changes"
+  /// inherits the prior ship's queuedAt (set at ingest by ari-webhooks), so a
+  /// project sent back for fixes returns to its original spot in line instead
+  /// of the back of the queue. Any other prior outcome (rejected / withdrawn /
+  /// reverted) resets it. receivedAt stays the canonical ship date and the
+  /// evidence-window bound - never sort or display the queue by it.
+  queuedAt            DateTime                 @default(now())
+  evidenceSyncedAt    DateTime?
+  /// Evidence snapshot counter, written by ari-webhooks: +1 inside every capture
+  /// persist (the ingest-time enrich and each reviewer-triggered re-enrich), so
+  /// one snapshot can be told from the next. 0 = no capture has landed yet.
+  enrichmentVersion   Int                      @default(0)
+  hackatimeProjects   String[]
+  /// Reviewer-corrected display names for this ship only, keyed by lowercased maker
+  /// email. Kept off Maker so fixing one ship never rewrites that person's identity
+  /// across every historical submission. ActivityEvent retains every before/after.
+  authorNameOverrides Json?
+  programMeta         Json?
+  track               Track                    @default(software)
+  /// Revision of this specific ship's inbound payload. This is independent of
+  /// `version`, which counts separate ships of the same project. Legacy senders
+  /// that omit `ingest_version` are treated as revision 1.
+  ingestVersion       Int                      @default(1)
+  version             Int                      @default(1)
+  thumbnailUrl        String?
+  /// Maker flagged this ship as an update to a prior one (optional ingest fields
+  /// `is_update` / `update_message`). Surfaces a blue "Maker update" flag on the
+  /// review screen, with `updateMessage` as the what-changed note (may be empty).
+  isUpdate            Boolean                  @default(false)
+  updateMessage       String?
+  /// Maker-requested "review this first" marker, set through the program's public
+  /// priority form (opt-in via Program.priorityReview). Sorts the ship ahead of the
+  /// rest of the queue and rides outbound as `priority`. Never reviewer-set.
+  priority            Boolean                  @default(false)
+  aiCheckResult       Json?
+  aiCheckRanAt        DateTime?
+  /// Soft review lock: the reviewer currently working this ship. A reviewer who
+  /// opens an open ship (pending/changes) claims it so no one else can act on it.
+  /// Refreshed by the review screen's heartbeat; released on finish-session, on
+  /// moving to another ship, or auto-reaped after 30min idle (see claims.ts /
+  /// claimreaper.ts). Cleared on any decision (the ship leaves the open queue).
+  claimedById         String?
+  claimedAt           DateTime?
+  claimedBy           User?                    @relation("ClaimedReviews", fields: [claimedById], references: [id], onDelete: SetNull)
+  collaborators       SubmissionCollaborator[]
+  commits             Commit[]
+  devlogs             Devlog[]
+  drafts              Draft[]
+  clips               ElapsedClip[]
+  flags               Flag[]
+  fraudChecks         FraudCheck[]
+  hours               HoursBreakdown?
+  reviews             Review[]
+  reviewerVms         ReviewerVm[]
+  opens               SubmissionOpen[]
+  maker               Maker                    @relation(fields: [makerId], references: [id])
+  program             Program                  @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@unique([programId, externalId], map: "Submission_open_project_key", where: raw("(status = ANY (ARRAY['processing'::\"SubmissionStatus\", 'pending'::\"SubmissionStatus\"]))"))
+  @@index([programId, externalId])
+  @@index([programId, status])
+  @@index([programId, track, status])
+  @@index([claimedById])
+}
+
+model Commit {
+  id            String     @id @default(cuid())
+  submissionId  String
+  hash          String
+  message       String
+  committedAt   DateTime
+  additions     Int
+  deletions     Int
+  codingSeconds Int        @default(0)
+  htSeen        Boolean    @default(false)
+  /// Git author identity (`%an` / `%ae`), captured at enrichment.
+  authorName    String?
+  authorEmail   String?
+  /// `Co-authored-by` trailers parsed from the commit body: a JSON array of
+  /// `{ name, email }`. Surfaces extra contributors (incl. AI agents like
+  /// Copilot/Claude) the single `%an` author hides. Informational only -
+  /// shown on the review screen, never gated on. Defaults to an empty array.
+  coAuthors     Json       @default("[]")
+  /// The collaborator this commit's author resolved to, by strict git-author-
+  /// email equality (authorEmail == Maker.email). Null for solo ships and for
+  /// unmatched authors (incl. GitHub noreply addresses - those are parsed only
+  /// for the display label, never for ownership).
+  makerId       String?
+  submission    Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model Devlog {
+  id           String     @id @default(cuid())
+  submissionId String
+  at           DateTime
+  minutes      Int
+  seconds      Int        @default(0)
+  text         String
+  hasImage     Boolean    @default(false)
+  markdown     String
+  /// Owning collaborator (from `journals[].email`); null on solo ships.
+  makerId      String?
+  maker        Maker?     @relation(fields: [makerId], references: [id])
+  submission   Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model ElapsedClip {
+  id            String     @id @default(cuid())
+  submissionId  String
+  at            DateTime
+  lengthSeconds Int
+  note          String
+  url           String?
+  thumbnailUrl  String?
+  /// Owning collaborator (clips are fetched per person's Hackatime id);
+  /// null on solo ships.
+  makerId       String?
+  maker         Maker?     @relation(fields: [makerId], references: [id])
+  submission    Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model HoursBreakdown {
+  submissionId           String     @id
+  hackatimeMinutes       Int        @default(0)
+  devlogMinutes          Int        @default(0)
+  afterLastCommitMinutes Int        @default(0)
+  lapseMinutes           Int        @default(0)
+  /// How much credit the "ai coding" discount removed, ship total across all
+  /// collaborators, in minutes. Written by ari-webhooks on every healthy capture.
+  /// Every other column here is already net of it (as are the per-collaborator
+  /// splits, the heatmaps and per-commit coding seconds), so this is only for
+  /// showing the reviewer what came off. 0 = nothing was discounted, which is also
+  /// what ships captured before the column existed read as.
+  aiDiscountedMinutes    Int        @default(0)
+  /// Program-asserted "program-added" time (ingest payload `program_hours`). NOT
+  /// evidence-derived - set at ingest from the program's own number and never
+  /// touched by enrichment. On collaborative ships this is the sum of the
+  /// per-collaborator shares. Counted toward the verified total, reviewer-deflatable.
+  programMinutes         Int        @default(0)
+  // integer seconds; the minutes columns above are legacy and dual-written until cutover
+  hackatimeSeconds       Int        @default(0)
+  devlogSeconds          Int        @default(0)
+  afterLastCommitSeconds Int        @default(0)
+  lapseSeconds           Int        @default(0)
+  aiDiscountedSeconds    Int        @default(0)
+  programSeconds         Int        @default(0)
+  /// Per-day, per-project Hackatime coding time for the activity heatmap on the
+  /// review screen. Shape: { "YYYY-MM-DD": { "<project>": <seconds>, … }, … },
+  /// UTC-day buckets, seconds (matches the enrich span accounting). Null until the
+  /// ship is (re)captured by ari-webhooks; empty {} means tracked but no time.
+  hackatimeHeatmap       Json?
+  /// Per-day, per-slot Hackatime coding time for the day-detail card (click a day in
+  /// the heatmap). Shape: { "YYYY-MM-DD": { "<5-min slot 0-287>": <seconds>, … }, … },
+  /// UTC 5-minute buckets - each span's seconds distributed across the slots it spans.
+  /// Sparse (only days/slots with time). Null until (re)captured by ari-webhooks.
+  hackatimeHourly        Json?
+  /// Start of the evidence window this capture actually counted over -
+  /// max(program.trackingStartsAt, last approved ship of the project,
+  /// programMeta._prior_credited_at). Written by the ari-webhooks enrichment that
+  /// derives it; the window ENDS at submission.receivedAt. Read back when building
+  /// the outbound justification's Hackatime date range, so the range reported to a
+  /// program is the one the hours were actually counted over rather than a second,
+  /// independently-derived guess. Null when nothing floors the window (no program
+  /// tracking start, no approved prior ship, no _prior_credited_at) and on ships
+  /// captured before this column existed - in both cases there is no start date to
+  /// report, so the justification gives bare project names instead of a range.
+  trackingFromAt         DateTime?
+  submission             Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+}
+
+/// One external fraud-review request per (submission, maker).
+model FraudCheck {
+  id            String           @id @default(cuid())
+  submissionId  String
+  makerId       String
+  programId     String
+  /// Project id at the external fraud-review service. Null until filed.
+  joeProjectId  String?
+  /// Score returned by the external review. Null while pending.
+  trustScore    Int?
+  justification String?
+  status        FraudCheckStatus @default(pending)
+  createdAt     DateTime         @default(now())
+  resolvedAt    DateTime?
+  program       Program          @relation(fields: [programId], references: [id], onDelete: Cascade)
+  submission    Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, makerId])
+  @@index([programId, status])
+}
+
+/// Computed by the flag-evaluation seam (Phase 3).
+model Flag {
+  id            String       @id @default(cuid())
+  submissionId  String
+  kind          FlagKind
+  severity      FlagSeverity
+  title         String
+  what          String
+  matched       Json
+  action        String
+  dismissedAt   DateTime?
+  dismissedById String?
+  submission    Submission   @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+/// A persisted decision (also = the "Past reviews" history).
+model Review {
+  id                          String         @id @default(cuid())
+  submissionId                String
+  reviewerId                  String
+  decision                    ReviewDecision
+  noteToMaker                 String
+  auditNote                   String
+  fieldValues                 Json
+  checklist                   Json
+  createdAt                   DateTime       @default(now())
+  /// Final verified time at decision (sum of per-item adjusted minutes).
+  approvedMinutes             Int            @default(0)
+  /// Which settlement model interpreted `adjustments` / produced the stored
+  /// minutes. 1 = commit-anchored v1 (Hackatime credit came from commits'
+  /// coding seconds + the after-last-commit row, so tracked time that never
+  /// anchored to an email-matched commit was dropped from a person's split).
+  /// 2 = tracked-heartbeats v2 (each person's Hackatime credit is their
+  /// captured tracked minutes; commits are view data). Replays (second-pass
+  /// confirm, outbound redispatch) MUST settle under the stored version or a
+  /// v1 row's stored adjustments stop matching the recomputed numbers.
+  /// Default 1: every pre-v2 review row replays under the model that decided it.
+  settlementVersion           Int            @default(1)
+  /// Per-item deflations: { commits: {id: mins}, devlogs: {id: mins}, clips: {id: mins} }
+  adjustments                 Json           @default("{}")
+  /// Collaborative ships: per-person settled minutes at decision, keyed by
+  /// makerId - { [makerId]: { total, hackatime, journals, lapse } }. Empty for solo.
+  collaboratorMinutes         Json           @default("{}")
+  /// Reviewer-set "deflate hours" - positive-only minutes subtracted from the total
+  /// reported to the OUTBOUND webhook (and proportionally from its breakdown/collab
+  /// splits). Stored approvedMinutes stays the canonical per-item settlement; this is
+  /// applied only when shaping the outbound payload. Null = reviewer left it untouched.
+  /// On collaborative ships with collaboratorDeflates set, this holds their sum so
+  /// the total cut stays readable everywhere the flat deflate already shows.
+  deflateMinutes              Int?
+  /// Collaborative ships: per-person "deflate hours" keyed by makerId - positive-only
+  /// minutes cut from THAT person's reported time (clamped to their settled total).
+  /// When present it replaces the proportional flat-deflate split, so one person's
+  /// inflated hours can be zeroed without touching their teammates. Outbound-only,
+  /// like deflateMinutes. Null/{} = no per-person deflation.
+  collaboratorDeflates        Json?
+  // integer seconds. settlementVersion 3 rows settle from adjustmentsSeconds; older rows
+  // keep replaying from the minutes columns above, with these backfilled as minutes * 60
+  approvedSeconds             Int            @default(0)
+  adjustmentsSeconds          Json           @default("{}")
+  collaboratorSeconds         Json           @default("{}")
+  deflateSeconds              Int?
+  collaboratorDeflatesSeconds Json?
+  /// Collaborative ships: per-person note to maker keyed by makerId. Delivered
+  /// outbound as collaborators[].note_to_maker so each person can learn why THEIR
+  /// hours came out the way they did without it being group business; noteToMaker
+  /// stays the shared note. Empty {} = shared note only.
+  collaboratorNotes           Json           @default("{}")
+  /// "Specific Technical Features" - what the project actually has that accounts for
+  /// the hours (per the YSWS handbook's Override Hours Spent Justification standard).
+  /// Human-written and required to approve; request-changes and reject credit no hours,
+  /// so neither has to account for any. Shipped outbound in `review.justification`.
+  /// Empty on reviews recorded before the standard landed.
+  technicalFeatures           String         @default("")
+  /// "Deflation Justification" - what the hours were deflated to and why. Required
+  /// whenever the decision reports fewer hours than the evidence captured (a flat
+  /// deflate or any per-item adjustment); empty when nothing was deflated.
+  deflationReason             String         @default("")
+  timeEvidence                String         @default("")
+  supportingEvidence          String         @default("")
+  hoursReasoning              String         @default("")
+  additionalJustification     String         @default("")
+  /// Re-ship verification: ids of the prior request-changes Reviews the approving
+  /// reviewer confirmed were addressed (see the fix-verification gate in decide()).
+  /// Empty for fresh ships and for non-approval decisions.
+  fixChecks                   Json           @default("[]")
+  reviewer                    User           @relation(fields: [reviewerId], references: [id])
+  submission                  Submission     @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([reviewerId])
+}
+
+/// Server home for the localStorage `ari-review:{program}:{id}` blob.
+model Draft {
+  submissionId                String
+  reviewerId                  String
+  note                        String
+  audit                       String
+  fieldValues                 Json
+  checks                      Json
+  updatedAt                   DateTime   @updatedAt
+  /// Per-item deflations, same shape as Review.adjustments.
+  adjustments                 Json       @default("{}")
+  /// Draft of the reviewer-set "deflate hours" (minutes). See Review.deflateMinutes.
+  deflateMinutes              Int?
+  /// Draft of the per-person deflates (minutes by makerId). See Review.collaboratorDeflates.
+  collaboratorDeflates        Json?
+  adjustmentsSeconds          Json       @default("{}")
+  deflateSeconds              Int?
+  collaboratorDeflatesSeconds Json?
+  /// Draft of the per-person notes (by makerId). See Review.collaboratorNotes.
+  collaboratorNotes           Json       @default("{}")
+  /// Drafts of the two justification fields. See Review.technicalFeatures / .deflationReason.
+  technicalFeatures           String     @default("")
+  deflationReason             String     @default("")
+  timeEvidence                String     @default("")
+  supportingEvidence          String     @default("")
+  hoursReasoning              String     @default("")
+  additionalJustification     String     @default("")
+  /// Draft of the re-ship verification ticks. See Review.fixChecks.
+  fixChecks                   Json       @default("[]")
+  reviewer                    User       @relation(fields: [reviewerId], references: [id], onDelete: Cascade)
+  submission                  Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@id([submissionId, reviewerId])
+}
+
+model WebhookDelivery {
+  id            String                @id @default(cuid())
+  programId     String
+  externalId    String?
+  status        WebhookDeliveryStatus
+  httpStatus    Int
+  payloadBytes  Int
+  rawBodySha256 String
+  errorDetail   String?
+  submissionId  String?
+  receivedAt    DateTime              @default(now())
+  program       Program               @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, receivedAt])
+  @@index([programId, rawBodySha256])
+}
+
+/// Log of outbound review-result deliveries (one row per dispatched event).
+model OutboundDelivery {
+  id           String                 @id @default(cuid())
+  programId    String
+  event        String
+  submissionId String?
+  url          String
+  status       OutboundDeliveryStatus @default(PENDING)
+  attempts     Int                    @default(0)
+  httpStatus   Int?
+  errorDetail  String?
+  /// The exact signed JSON body, retained only while PENDING so a delivery orphaned
+  /// by a restart can be replayed verbatim by the outbound reaper (point-in-time
+  /// minutes/fields can't be reconstructed later). Nulled once DELIVERED or FAILED.
+  payload      String?
+  createdAt    DateTime               @default(now())
+  deliveredAt  DateTime?
+  program      Program                @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, createdAt])
+}
+
+model ActivityEvent {
+  id           String       @id @default(cuid())
+  programId    String
+  kind         ActivityKind
+  actorId      String?
+  submissionId String?
+  text         String
+  createdAt    DateTime     @default(now())
+  meta         Json?
+  program      Program      @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([programId, createdAt])
+}
+
+/// Org-level granular capabilities (User.orgPermissions, Invite.orgPermissions).
+/// These replace the old MEMBER/ORG_ADMIN role outright: a user with none is a
+/// plain member; the union of them all is the old org-admin tier. Kept in sync
+/// with src/lib/data.ts ORG_PERMISSIONS and src/lib/server/authz.ts.
+enum OrgPermission {
+  MANAGE_PROGRAMS // Admin -> programs: create/edit/archive/unarchive (implies CREATE_PROGRAMS; sole holder of the reviewer-VM toggle)
+  MANAGE_PEOPLE // Admin -> people: directory, invites, removing users
+  GRANT_ORG_PERMS // Grant/revoke org permissions (no self-edit; only what the granter holds)
+  VIEW_WEBHOOK_LOGS // Admin -> webhooks: delivery log
+  MANAGE_MCP // Admin -> MCP: mint/revoke tokens (tokens also need OPERATE_ALL_PROGRAMS)
+  VIEW_ALL_PROGRAMS // Every program reachable + docs + the VIEW_* program permissions everywhere (not listed by default: opt in via /programs?all=1)
+  OPERATE_ALL_PROGRAMS // Full operator on every program (implies VIEW_ALL_PROGRAMS)
+  CREATE_PROGRAMS // Admin -> programs: create only - no edit/archive, and never the reviewer-VM toggle (MANAGE_PROGRAMS-only)
+}
+
+/// See User.nameSource.
+enum NameSource {
+  SLACK
+  PENDING
+  CUSTOM
+}
+
+/// Granular per-membership capabilities within a program (Membership.permissions,
+/// Invite.permissions). A member with none is a plain reviewer. Org admins and the
+/// program POC hold all of these implicitly. Kept in sync with src/lib/data.ts
+/// PROGRAM_PERMISSIONS and the authz helpers in src/lib/server/authz.ts.
+enum ProgramPermission {
+  MANAGE_SETTINGS // Settings page (view + save)
+  SECOND_PASS // Second-pass tab + all secondpass-status review actions
+  USE_VMS // Launch reviewer VMs (still gated by Program.allowVms)
+  VIEW_REVIEWED // Reviewed list
+  VIEW_AUDIT_LOG // Activity / audit log page
+  VIEW_FRAUD // Fraud review page + presecond FRAUD-flag visibility
+  VIEW_REVIEWERS // See the reviewers roster (read-only)
+  MANAGE_REVIEWERS // Add/remove members, edit tracks, grant/revoke permissions
+  OVERRIDE_DECISIONS // revert (unship), requeue, setTrack (reclassify)
+}
+
+/// Software vs hardware review track. A submission belongs to exactly one;
+/// a reviewer may be scoped to one or both (Membership.tracks). Lowercase
+/// values mirror the src/lib/data.ts Track union (per the contract above).
+enum Track {
+  software
+  hardware
+}
+
+enum ProgramStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum Evidence {
+  commits
+  elapsed
+  devlog
+}
+
+enum FieldType {
+  checkbox
+  text
+  number
+  select
+  multiselect
+}
+
+/// Flags are written by ari-webhooks; ari only renders and configures them. All of
+/// them are per-program opt-in through FlagRule, and a
+/// reviewer's dismissal is final - the service never re-raises a dismissed flag.
+enum FlagKind {
+  DOUBLE_DIP
+  FRAUD
+  NO_README
+  PLAGIARISM
+  PHANTOM_FILES
+  MARATHON_SESSION
+  HOURS_REUSE
+  IDLE_DEVLOG
+}
+
+/// Where external fraud review sits in a program's pipeline, or off.
+enum FraudReviewMethod {
+  off
+  gate
+  presecond
+  concurrent
+  relay
+}
+
+enum FraudCheckStatus {
+  pending
+  passed
+  failed
+}
+
+enum SubmissionStatus {
+  pending
+  approved
+  changes
+  rejected
+  reverted
+  processing
+  /// Pulled off the queue by the program (maker withdrew) before a decision.
+  /// Terminal, like reverted - the project may ship again.
+  withdrawn
+  /// A reviewer decided the ship (approve / request changes / reject) but the program
+  /// has second pass on, so the decision is parked here awaiting organizer confirmation.
+  /// The Review row records the held decision in full; the outbound webhook fires only
+  /// when an organizer confirms (→ the held decision's status: approved/changes/rejected).
+  /// Sending it back to the queue (→ pending) discards the held decision. Not an open
+  /// status (frees the per-project slot, like a decided ship).
+  secondpass
+  /// Parked awaiting an external fraud-review verdict. Used by the `gate`
+  /// (pre-queue), `presecond` (post-decision, pre-second-pass), and `concurrent`
+  /// (post-decision, only while checks filed at queue entry are still unresolved)
+  /// methods. Not an open/claimable status. On pass → pending (gate) or secondpass
+  /// (presecond/concurrent); on fail → rejected with the default fraud message.
+  fraudreview
+}
+
+enum FlagSeverity {
+  WARN
+  DANGER
+}
+
+enum ReviewDecision {
+  approved
+  changes
+  rejected
+}
+
+enum WebhookDeliveryStatus {
+  ACCEPTED
+  DUPLICATE
+  BAD_SIGNATURE
+  INVALID
+  CONFLICT
+}
+
+enum OutboundDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
+enum ActivityKind {
+  APPROVED
+  CHANGES
+  REJECTED
+  WEBHOOK
+  FLAG
+  MEMBER
+  REVERT
+  SETTINGS
+  SECRET
+  DELIVERY
+  /// Evidence-capture diagnostics (failed clone / Hackatime / lapse / demo
+  /// probe attempts) - mirrors what the server console logs.
+  EVIDENCE
+  /// Reviewer launched / stopped a disposable review VM for a ship.
+  VM
+  /// A maker requested priority review for a ship through the public priority form.
+  PRIORITY
+  /// A reviewer corrected editable ship metadata. meta.changes retains before/after.
+  SHIP_EDIT
+}

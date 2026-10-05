@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ari
+      POSTGRES_PASSWORD: ari
+      POSTGRES_DB: ari
+    ports:
+      - '5433:5432'
+    volumes:
+      - ari-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ari -d ari']
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ari-db:

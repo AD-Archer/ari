@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # the open core: the private submodule is not checked out and the stub stands in
+      ARI_PUBLIC_BUILD: 1
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      # sync writes the .svelte-kit/tsconfig.json the prisma generator reads
+      - run: bunx svelte-kit sync
+
+      - run: bunx prisma generate
+
+      - run: bunx prisma migrate deploy
+
+      - run: bun run lint
+
+      - run: bun run check
+
+      # the db tests encrypt webhook secrets, so they need a key; any 32 bytes will do
+      - run: echo "TOKEN_ENC_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - run: bun test src
+
+      - run: bun run build

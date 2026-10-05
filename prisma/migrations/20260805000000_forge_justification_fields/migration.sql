@@ -1,0 +1,8 @@
+ALTER TABLE "Review" ADD COLUMN "timeEvidence" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Review" ADD COLUMN "supportingEvidence" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Review" ADD COLUMN "hoursReasoning" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Review" ADD COLUMN "additionalJustification" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Draft" ADD COLUMN "timeEvidence" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Draft" ADD COLUMN "supportingEvidence" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Draft" ADD COLUMN "hoursReasoning" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "Draft" ADD COLUMN "additionalJustification" TEXT NOT NULL DEFAULT '';

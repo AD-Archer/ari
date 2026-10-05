@@ -1,0 +1,23 @@
+node_modules
+/build
+/.svelte-kit
+/generated
+
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.github
+.vscode
+Dockerfile
+.dockerignore
+
+vite.config.*.timestamp-*
+
+# local seed fixtures
+/static/dev
+
+# the private edition receives private/web as its own build context
+/private
