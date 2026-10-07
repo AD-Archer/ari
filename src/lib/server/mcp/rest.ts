@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import { bearerToken, validateMcpToken, type McpContext } from './auth';
 import { mlog, tail4 } from './log';
-import { mcpTools } from './tools';
+import { toolFor } from './tools';
+import { toolError } from './tools/shared';
 
 const refuse = (status: number, error: string) => json({ error }, { status });
 
@@ -32,7 +33,7 @@ async function argumentsOf(request: Request): Promise<Record<string, unknown> | 
 export async function callToolOverRest(name: string, request: Request): Promise<Response> {
 	const context = await restContext(request);
 	if (context instanceof Response) return context;
-	const tool = Object.hasOwn(mcpTools, name) ? mcpTools[name] : undefined;
+	const tool = toolFor(name, context);
 	if (!tool) return refuse(404, `Unknown tool: ${name}`);
 	if (tool.write && !context.canWrite) {
 		return refuse(403, 'This token is read-only. Mint a read-write token to use write tools.');
@@ -45,7 +46,8 @@ export async function callToolOverRest(name: string, request: Request): Promise<
 	try {
 		return json(await tool.handler(args, context));
 	} catch (error) {
-		mlog('rest', `call error: ${name}`, { error: (error as Error).message });
-		return refuse(400, (error as Error).message);
+		const { status, message } = toolError(error);
+		mlog('rest', `call error: ${name}`, { error: message });
+		return refuse(status, message);
 	}
 }

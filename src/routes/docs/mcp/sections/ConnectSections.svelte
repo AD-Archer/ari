@@ -2,6 +2,8 @@
 	import CodeBlock from '$lib/components/docs/CodeBlock.svelte';
 	import DocSection from '$lib/components/docs/DocSection.svelte';
 	import Note from '$lib/components/docs/Note.svelte';
+	import RowList from '$lib/components/docs/RowList.svelte';
+	import { accessRows } from '../toolRows';
 	import { callReply, connectCommand, curlCall, openApiCall, restCall } from '../examples';
 
 	let { endpoint }: { endpoint: string } = $props();
@@ -24,16 +26,17 @@
 
 <DocSection id="connecting" title="Tokens and connecting">
 	<p class="docProse">
-		Create a token in <code>Admin → MCP</code>. Give it a label, pick when it expires (never, 30
-		days, 90 days or 1 year), and switch on <code>Read-write</code> if it should be able to change
-		anything. The token starts with <code>ari_mcp_</code> and is shown once, so copy it right away. Ari
-		keeps only a hash.
+		Anyone can create a token: open the menu under your avatar and pick <code>MCP</code>. Give it a
+		label, pick when it expires (never, 30 days, 90 days or 1 year), and switch on
+		<code>Read-write</code> if it should be able to change anything. You can also limit it to some
+		of your programs. The token starts with <code>ari_mcp_</code> and is shown once, so copy it right
+		away. Ari keeps only a hash.
 	</p>
 	<p class="docProse">
-		A token acts as the person who created it. Its owner must hold both
-		<code>MANAGE_MCP</code> and <code>OPERATE_ALL_PROGRAMS</code>, and Ari checks this on every
-		request: taking either permission away stops all of that person's tokens at once. Revoke a
-		single token from the same page.
+		A token acts as you. It sees and changes exactly what you can in the app, and Ari reads your
+		access again on every request: if you lose a permission or leave a program, your tokens lose it
+		at the same moment. Revoke a token from the same page. People with
+		<code>MANAGE_MCP</code> can see and revoke everyone's tokens in <code>Admin → MCP</code>.
 	</p>
 	<CodeBlock title="Claude Code" tone="green" code={connectCommand(endpoint)} />
 	<p class="docProse">
@@ -49,6 +52,23 @@
 			anyway fails with <code>This token is read-only.</code>
 		</p>
 	</Note>
+</DocSection>
+
+<DocSection id="access" title="What a token can reach">
+	<p class="docProse">
+		Every tool follows the same rules as the page it matches. A program you cannot open reads as
+		missing. Ships are limited to your tracks. Your own ships are hidden when the program hides
+		them, and held or fraud-review ships stay hidden without <code>SECOND_PASS</code> or
+		<code>VIEW_FRAUD</code>. Org operators reach every program; everyone else reaches the programs
+		they are a member of.
+	</p>
+	<RowList rows={accessRows} />
+	<p class="docProse">
+		A token limited to some programs reaches only those, even if you could open more, and cannot use
+		the org-wide tools: <code>create_program</code>, <code>set_org_permissions</code>,
+		<code>list_users</code> and <code>get_user</code>. A refused call names the permission it
+		needed.
+	</p>
 </DocSection>
 
 <DocSection id="rest" title="REST and OpenAPI">

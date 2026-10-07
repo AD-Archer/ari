@@ -3,7 +3,7 @@ import { privateProvider } from '$private';
 import { db } from '$lib/server/db';
 import { validateMcpToken, type McpContext } from './auth';
 import { dispatch } from './server';
-import { listToolSpecs, mcpTools } from './tools';
+import { mcpTools, toolsFor } from './tools';
 import { callTool, mcpFixture, readToolNames, writeToolNames } from './toolsTestFixture';
 
 const fixture = mcpFixture('mcpAccessTest');
@@ -46,8 +46,10 @@ afterAll(async () => {
 });
 
 describe('token rules', () => {
-	test('a token is refused unless its owner holds MANAGE_MCP and OPERATE_ALL_PROGRAMS', async () => {
-		expect(await validateMcpToken(outsiderToken)).toBeNull();
+	test('any user can hold a token, which acts with exactly their access', async () => {
+		const outsider = await validateMcpToken(outsiderToken);
+		expect(outsider?.user.id).toBe(outsiderId);
+		expect(outsider && (await callTool('list_programs', {}, outsider))).toEqual([]);
 		expect(await validateMcpToken('ari_mcp_unknown')).toBeNull();
 		expect(await validateMcpToken('not-an-mcp-token')).toBeNull();
 		expect(readContext.user.id).toBe(adminId);
@@ -55,7 +57,7 @@ describe('token rules', () => {
 		expect(writeContext.canWrite).toBe(true);
 	});
 
-	test('revoked and expired tokens are refused, and losing a permission kills a live token', async () => {
+	test('revoked and expired tokens are refused, and a lost permission is lost to the token at once', async () => {
 		const revoked = await mintToken(adminId, false, { revokedAt: new Date() });
 		expect(await validateMcpToken(revoked)).toBeNull();
 
@@ -65,21 +67,24 @@ describe('token rules', () => {
 		expect(await validateMcpToken(expired)).toBeNull();
 
 		const live = await mintToken(adminId, false);
-		expect(await validateMcpToken(live)).not.toBeNull();
-		await db.user.update({ where: { id: adminId }, data: { orgPermissions: ['MANAGE_MCP'] } });
-		expect(await validateMcpToken(live)).toBeNull();
-		await db.user.update({
-			where: { id: adminId },
-			data: { orgPermissions: ['MANAGE_MCP', 'OPERATE_ALL_PROGRAMS'] }
-		});
-		expect(await validateMcpToken(live)).not.toBeNull();
+		expect((await validateMcpToken(live))?.user.orgPermissions).toContain('MANAGE_PEOPLE');
+		const before = fixture.adminPermissions;
+		await db.user.update({ where: { id: adminId }, data: { orgPermissions: [] } });
+		const narrowed = (await validateMcpToken(live))!;
+		expect(narrowed.user.orgPermissions).toEqual([]);
+		expect(callTool('list_users', {}, narrowed)).rejects.toThrow(
+			'You need the MANAGE_PEOPLE or GRANT_ORG_PERMS org permission.'
+		);
+		await db.user.update({ where: { id: adminId }, data: { orgPermissions: before } });
 	});
 });
 
 describe('tool catalogue', () => {
 	const privateNames = privateProvider.mcpTools().map((tool) => tool.spec.name);
 	const publicSpecs = (canWrite: boolean) =>
-		listToolSpecs(canWrite).filter((spec) => !privateNames.includes(spec.name));
+		toolsFor(canWrite ? writeContext : readContext)
+			.map((tool) => tool.spec)
+			.filter((spec) => !privateNames.includes(spec.name));
 
 	test('names and order are the wire contract, and write tools need a read-write token', () => {
 		expect(publicSpecs(false).map((spec) => spec.name)).toEqual(readToolNames);

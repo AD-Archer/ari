@@ -1,5 +1,5 @@
 import { fail } from '@sveltejs/kit';
-import { requireOrgPermission } from '$lib/server/authz';
+import { requireUser } from '$lib/server/authz';
 import { baseUrl } from '$lib/server/mcp/oauth';
 import {
 	deleteToken,
@@ -12,28 +12,31 @@ import {
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, url }) => {
-	const user = requireOrgPermission(locals, 'MANAGE_MCP');
-	const [tokens, programs] = await Promise.all([tokenRows({}), pickablePrograms(user)]);
+	const user = requireUser(locals);
+	const [tokens, programs] = await Promise.all([
+		tokenRows({ userId: user.id }),
+		pickablePrograms(user)
+	]);
 	return { endpoint: `${baseUrl(url.origin)}/api/mcp`, tokens, programs };
 };
 
 const answered = <Data extends object>(result: TokenResult<Data>) =>
 	result.ok ? result : fail(result.status, { error: result.error });
 
-// an mcp manager oversees everyone's tokens, but still mints only their own
+// every action is limited to the signed-in person's own tokens
 export const actions: Actions = {
 	mint: async ({ locals, request }) =>
-		answered(await mintToken(requireOrgPermission(locals, 'MANAGE_MCP'), await request.formData())),
+		answered(await mintToken(requireUser(locals), await request.formData())),
 
 	revoke: async ({ locals, request }) => {
-		requireOrgPermission(locals, 'MANAGE_MCP');
+		const user = requireUser(locals);
 		const id = String((await request.formData()).get('id') ?? '');
-		return answered(await revokeToken(id, null));
+		return answered(await revokeToken(id, user.id));
 	},
 
 	delete: async ({ locals, request }) => {
-		requireOrgPermission(locals, 'MANAGE_MCP');
+		const user = requireUser(locals);
 		const id = String((await request.formData()).get('id') ?? '');
-		return answered(await deleteToken(id, null));
+		return answered(await deleteToken(id, user.id));
 	}
 };

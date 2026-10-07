@@ -1,4 +1,5 @@
-import { mcpTools, listToolSpecs } from './tools';
+import { toolFor, toolsFor } from './tools';
+import { toolError } from './tools/shared';
 import type { McpContext } from './auth';
 import { mlog } from './log';
 
@@ -47,13 +48,13 @@ export async function dispatch(
 				capabilities: { tools: { listChanged: false } },
 				serverInfo,
 				instructions:
-					'Org-admin access to ari, Hack Club’s ship-review platform. Start with list_programs, then program_stats / list_submissions / get_submission. Read-write tokens can also create programs and edit their settings, review tools, images, signing secrets and members: start with create_program or get_program_settings.'
+					'Access to ari, Hack Club’s ship-review platform, as the token’s owner: every tool sees and does only what that person can in the app. Start with whoami and list_programs, then program_stats / list_submissions / get_submission. Read-write tokens can also change what their owner may change, such as program settings, review tools, members and signing secrets.'
 			});
 		}
 		case 'ping':
 			return succeed(id, {});
 		case 'tools/list': {
-			const specs = listToolSpecs(context.canWrite);
+			const specs = toolsFor(context).map((tool) => tool.spec);
 			mlog('rpc', 'tools/list', { count: specs.length, canWrite: context.canWrite });
 			return succeed(id, { tools: specs });
 		}
@@ -63,7 +64,7 @@ export async function dispatch(
 			mlog('rpc', `tools/call: ${name ?? '(missing name)'}`, {
 				args: Object.keys(request.params?.arguments ?? {})
 			});
-			const tool = name ? mcpTools[name] : undefined;
+			const tool = name ? toolFor(name, context) : undefined;
 			if (!tool) {
 				mlog('rpc', `tools/call unknown tool: ${name ?? '(missing name)'}`);
 				return fail(id, -32602, `Unknown tool: ${name ?? '(missing name)'}`);
@@ -76,9 +77,10 @@ export async function dispatch(
 				});
 			} catch (error) {
 				// reported inside the result so the model sees the message and can adjust
-				mlog('rpc', `tools/call error: ${name}`, { error: (error as Error).message });
+				const { message } = toolError(error);
+				mlog('rpc', `tools/call error: ${name}`, { error: message });
 				return succeed(id, {
-					content: [{ type: 'text', text: `Error: ${(error as Error).message}` }],
+					content: [{ type: 'text', text: `Error: ${message}` }],
 					isError: true
 				});
 			}

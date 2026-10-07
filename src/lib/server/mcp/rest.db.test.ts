@@ -40,11 +40,25 @@ afterAll(async () => {
 });
 
 describe('rest tool calls', () => {
-	test('a missing or non-admin token is a 401', async () => {
-		for (const token of [null, 'ari_mcp_unknown', outsiderToken]) {
+	test('a missing or unknown token is a 401', async () => {
+		for (const token of [null, 'ari_mcp_unknown']) {
 			const response = await post('whoami', token);
 			expect(response.status).toBe(401);
 		}
+	});
+
+	test('a missing permission is a 403, and a program out of reach a 404', async () => {
+		const response = await post('list_users', outsiderToken);
+		expect(response.status).toBe(403);
+		const settings = await post(
+			'get_program_settings',
+			outsiderToken,
+			JSON.stringify({ program: programId })
+		);
+		expect(settings.status).toBe(404);
+		expect(await settings.json()).toEqual({
+			error: `No program matches "${programId}" (try list_programs).`
+		});
 	});
 
 	test('a read tool answers with its result as the body', async () => {

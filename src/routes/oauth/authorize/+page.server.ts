@@ -64,13 +64,14 @@ export const actions: Actions = {
 			mlog('oauth', 'authorize POST → rejected token (re-render with error)');
 			return fail(400, {
 				params,
-				error: 'That token is invalid, revoked, or its owner lost MCP access.'
+				error: 'That token is invalid, revoked or expired.'
 			});
 		}
 
 		const code = await issueAuthCode({
 			userId: context.user.id,
 			canWrite: context.canWrite,
+			programIds: context.programIds,
 			codeChallenge: params.code_challenge,
 			redirectUri: params.redirect_uri
 		});

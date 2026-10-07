@@ -42,6 +42,7 @@
 			items: [
 				{ id: 'overview', label: 'Overview' },
 				{ id: 'connecting', label: 'Tokens and connecting' },
+				{ id: 'access', label: 'What a token can reach' },
 				{ id: 'rest', label: 'REST and OpenAPI' },
 				{ id: 'create', label: 'Creating a program' },
 				{ id: 'settings', label: 'Changing settings' },

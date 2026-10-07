@@ -1,6 +1,5 @@
-import { privateProvider } from '$private';
 import { serverInfo } from './server';
-import { mcpTools } from './tools';
+import { publicTools } from './tools';
 
 const errorResponse = (description: string) => ({
 	description,
@@ -17,8 +16,7 @@ const errorResponse = (description: string) => ({
 
 // public: the private provider's tools cover flags and fraud review, so they stay out
 export function buildOpenApi(origin: string) {
-	const privateNames = new Set(privateProvider.mcpTools().map((tool) => tool.spec.name));
-	const tools = Object.values(mcpTools).filter((tool) => !privateNames.has(tool.spec.name));
+	const tools = publicTools;
 	const paths = Object.fromEntries(
 		tools.map((tool) => [
 			`/api/admin/tools/${tool.spec.name}`,
@@ -40,7 +38,9 @@ export function buildOpenApi(origin: string) {
 						'401': errorResponse(
 							'The bearer token is missing, revoked, expired or not an admin token.'
 						),
-						'403': errorResponse('A write tool was called with a read-only token.'),
+						'403': errorResponse(
+							'A write tool was called with a read-only token, or the owner lacks a permission the tool needs.'
+						),
 						'404': errorResponse('There is no tool by that name.')
 					}
 				}
@@ -53,7 +53,7 @@ export function buildOpenApi(origin: string) {
 			title: 'Ari admin API',
 			version: serverInfo.version,
 			description:
-				'The tools of the Ari MCP server as plain HTTP. Send the tool arguments as the JSON body; the reply is the tool result. Every call needs a token minted in Admin → MCP, and the write tools need a read-write one.'
+				'The tools of the Ari MCP server as plain HTTP. Send the tool arguments as the JSON body; the reply is the tool result. Every call needs a token, which any user can create on their MCP page. A token acts as its owner: each tool sees and changes only what that person can in the app, and the write tools need a read-write token.'
 		},
 		servers: [{ url: origin }],
 		security: [{ bearerAuth: [] }],
@@ -66,7 +66,7 @@ export function buildOpenApi(origin: string) {
 				bearerAuth: {
 					type: 'http',
 					scheme: 'bearer',
-					description: 'An ari_mcp_ token minted in Admin → MCP.'
+					description: 'An ari_mcp_ token from your MCP page.'
 				}
 			}
 		},

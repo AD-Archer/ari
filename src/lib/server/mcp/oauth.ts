@@ -14,6 +14,7 @@ export function baseUrl(fallbackOrigin: string): string {
 export interface AuthCodeData {
 	userId: string;
 	canWrite: boolean;
+	programIds: string[];
 	codeChallenge: string;
 	redirectUri: string;
 }
@@ -25,6 +26,7 @@ export async function issueAuthCode(data: AuthCodeData): Promise<string> {
 			codeHash: sha256Hex(code),
 			userId: data.userId,
 			canWrite: data.canWrite,
+			programIds: data.programIds,
 			codeChallenge: data.codeChallenge,
 			redirectUri: data.redirectUri,
 			expiresAt: new Date(Date.now() + 300000) // 5 minutes: 5 * 60 * 1000
@@ -56,6 +58,7 @@ export async function consumeAuthCode(code: string): Promise<AuthCodeData | null
 	return {
 		userId: row.userId,
 		canWrite: row.canWrite,
+		programIds: row.programIds,
 		codeChallenge: row.codeChallenge,
 		redirectUri: row.redirectUri
 	};

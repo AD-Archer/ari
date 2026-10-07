@@ -10,7 +10,8 @@ import { patchSettings } from '$lib/server/settings/patchSave';
 import { ingestEndpointFor } from '$lib/server/settings/values';
 import { emptyProgramDraft, evidenceKinds } from '$lib/programRules';
 import { settingsProperties } from './settingsSchema';
-import { requireWrite, resolveProgram, unwrap, type Tool } from './shared';
+import { programFor, requireOrgWide } from './access';
+import { requireWrite, unwrap, type Tool } from './shared';
 
 const evidenceSchema = {
 	type: 'array',
@@ -110,6 +111,7 @@ export const createProgramTool: Tool = {
 	write: true,
 	handler: async (args, context) => {
 		requireWrite(context);
+		requireOrgWide(context);
 		const draft = emptyProgramDraft();
 		const input: CreateProgramInput = {
 			name: text(args, 'name') ?? '',
@@ -202,7 +204,7 @@ export const updateProgramTool: Tool = {
 		if (!hasOrgPermission(context.user, 'MANAGE_PROGRAMS')) {
 			throw new Error('The token owner does not hold MANAGE_PROGRAMS.');
 		}
-		const { id } = await resolveProgram(String(args.program));
+		const { id } = await programFor(context, args.program);
 		const current = await currentCore(id);
 		const poc = args.poc === undefined ? current.poc : (text(args, 'poc') ?? '');
 		unwrap(

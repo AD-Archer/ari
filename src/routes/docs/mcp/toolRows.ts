@@ -142,3 +142,32 @@ export const writeTools: DocRow[] = [
 			'Send a decided ship back to the queue with an audit reason. The program gets `review.requeued`.'
 	}
 ];
+
+export const accessRows: DocRow[] = [
+	{
+		name: 'Programs and ships',
+		description:
+			'`list_programs`, `program_stats`, `list_submissions`, `get_submission`, `search_submissions`, `submission_evidence`, `find_maker`: any program you can open, ships as above.'
+	},
+	{
+		name: 'MANAGE_SETTINGS',
+		description:
+			'`get_program`, `get_program_settings`, `update_program_settings`, `set_review_tools`, `upload_program_image`, `roll_ingest_secret`, `roll_outbound_secret`.'
+	},
+	{ name: 'VIEW_AUDIT_LOG', description: '`list_activity`, limited to your tracks.' },
+	{
+		name: 'VIEW_REVIEWED',
+		description: '`list_reviews`, and the decision history in `get_submission`.'
+	},
+	{
+		name: 'VIEW_REVIEWERS',
+		description: '`reviewer_stats`, and the roster numbers in `list_programs` and `program_stats`.'
+	},
+	{ name: 'MANAGE_REVIEWERS', description: '`add_member`, `remove_member`.' },
+	{ name: 'OVERRIDE_DECISIONS', description: '`requeue_submission`.' },
+	{
+		name: 'Org permissions',
+		description:
+			'`create_program` needs `CREATE_PROGRAMS` or `MANAGE_PROGRAMS`; `update_program` needs `MANAGE_PROGRAMS`; `list_users` and `get_user` need `MANAGE_PEOPLE` or `GRANT_ORG_PERMS`; `set_org_permissions` needs `GRANT_ORG_PERMS`.'
+	}
+];

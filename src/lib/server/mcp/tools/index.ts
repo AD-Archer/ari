@@ -20,7 +20,9 @@ import {
 	updateProgramSettings,
 	uploadProgramImage
 } from './programSettings';
-import type { Tool, ToolSpec } from './shared';
+import { hasOrgPermission } from '$lib/server/authz';
+import type { McpContext } from '../auth';
+import type { Tool } from './shared';
 
 export type { Tool, ToolSpec } from './shared';
 
@@ -50,14 +52,28 @@ const tools: Tool[] = [
 	setReviewTools,
 	uploadProgramImage,
 	rollIngestSecretTool,
-	rollOutboundSecretTool,
-	...privateProvider.mcpTools()
+	rollOutboundSecretTool
 ];
+const privateTools: Tool[] = privateProvider.mcpTools();
 
 export const mcpTools: Record<string, Tool> = Object.fromEntries(
-	tools.map((tool) => [tool.spec.name, tool])
+	[...tools, ...privateTools].map((tool) => [tool.spec.name, tool])
 );
 
-export function listToolSpecs(canWrite: boolean): ToolSpec[] {
-	return tools.filter((tool) => canWrite || !tool.write).map((tool) => tool.spec);
+// the private tools were written for org operators and cannot honour a program limit
+const seesPrivateTools = (context: McpContext) =>
+	hasOrgPermission(context.user, 'OPERATE_ALL_PROGRAMS') && context.programIds.length === 0;
+
+export function toolsFor(context: McpContext): Tool[] {
+	return [...tools, ...(seesPrivateTools(context) ? privateTools : [])].filter(
+		(tool) => context.canWrite || !tool.write
+	);
 }
+
+export function toolFor(name: string, context: McpContext): Tool | undefined {
+	return [...tools, ...(seesPrivateTools(context) ? privateTools : [])].find(
+		(tool) => tool.spec.name === name
+	);
+}
+
+export const publicTools: Tool[] = tools;

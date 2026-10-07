@@ -18,7 +18,8 @@ import {
 	toolsDraftOf
 } from '$lib/server/settings/values';
 import { privateSettingsProperty, settingsProperties } from './settingsSchema';
-import { requireProgramSettings, resolveProgram, unwrap, type Tool } from './shared';
+import { programFor } from './access';
+import { requireWrite, unwrap, type Tool } from './shared';
 
 const trackList = {
 	type: 'array',
@@ -36,7 +37,7 @@ export const getProgramSettings: Tool = {
 	spec: {
 		name: 'get_program_settings',
 		description:
-			'Everything the program settings page shows: settings (in the same names update_program_settings takes), the checklist, review fields and snippets, the private provider’s settings (flag rules and screening), the ingest endpoint and masked signing secrets. Secrets are never returned here.',
+			'Everything the program settings page shows (needs MANAGE_SETTINGS on the program): settings (in the same names update_program_settings takes), the checklist, review fields and snippets, the private provider’s settings (flag rules and screening), the ingest endpoint and masked signing secrets. Secrets are never returned here.',
 		inputSchema: {
 			type: 'object',
 			properties: { program: { type: 'string', description: 'Program id.' } },
@@ -44,8 +45,8 @@ export const getProgramSettings: Tool = {
 			additionalProperties: false
 		}
 	},
-	handler: async (args) => {
-		const { id, status } = await resolveProgram(String(args.program));
+	handler: async (args, context) => {
+		const { id, status } = await programFor(context, args.program, 'MANAGE_SETTINGS');
 		const [{ program, outbound }, ingestSecret, privateSettings] = await Promise.all([
 			readSettings(id),
 			activeIngestSecret(id),
@@ -85,8 +86,8 @@ export const updateProgramSettings: Tool = {
 	},
 	write: true,
 	handler: async (args, context) => {
-		const { id } = await resolveProgram(String(args.program));
-		requireProgramSettings(context, id);
+		requireWrite(context);
+		const { id } = await programFor(context, args.program, 'MANAGE_SETTINGS');
 		const patch = { ...args };
 		delete patch.program;
 		delete patch.privateSettings;
@@ -165,8 +166,8 @@ export const setReviewTools: Tool = {
 	},
 	write: true,
 	handler: async (args, context) => {
-		const { id } = await resolveProgram(String(args.program));
-		requireProgramSettings(context, id);
+		requireWrite(context);
+		const { id } = await programFor(context, args.program, 'MANAGE_SETTINGS');
 		const { program } = await readSettings(id);
 		const current = toolsDraftOf(program);
 		const form = new FormData();
@@ -197,8 +198,8 @@ export const uploadProgramImage: Tool = {
 	},
 	write: true,
 	handler: async (args, context) => {
-		const { id } = await resolveProgram(String(args.program));
-		requireProgramSettings(context, id);
+		requireWrite(context);
+		const { id } = await programFor(context, args.program, 'MANAGE_SETTINGS');
 		if (args.kind !== 'icon' && args.kind !== 'cardBg') {
 			throw new Error('kind must be "icon" or "cardBg".');
 		}
@@ -225,8 +226,8 @@ export const rollIngestSecretTool: Tool = {
 	},
 	write: true,
 	handler: async (args, context) => {
-		const { id } = await resolveProgram(String(args.program));
-		requireProgramSettings(context, id);
+		requireWrite(context);
+		const { id } = await programFor(context, args.program, 'MANAGE_SETTINGS');
 		const { plaintext } = unwrap(await rollIngestSecret(id, context.user.id));
 		return { program: id, ingestEndpoint: ingestEndpointFor(id), secret: plaintext };
 	}
@@ -246,8 +247,8 @@ export const rollOutboundSecretTool: Tool = {
 	},
 	write: true,
 	handler: async (args, context) => {
-		const { id } = await resolveProgram(String(args.program));
-		requireProgramSettings(context, id);
+		requireWrite(context);
+		const { id } = await programFor(context, args.program, 'MANAGE_SETTINGS');
 		const { plaintext } = unwrap(await rollOutboundSecret(id, context.user.id));
 		return { program: id, secret: plaintext };
 	}
