@@ -1,3 +1,4 @@
+import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 
 // captured at load: sveltekit dev patches globalThis.fetch during ssr
@@ -9,6 +10,8 @@ export type NdaLookup = { status: 'signed'; signedAt: Date } | { status: 'unsign
 const ndaBase = () => (env.NDA_API_BASE ?? '').trim().replace(/\/$/, '');
 
 export const ndaEnabled = () => ndaBase() !== '';
+// only production builds enforce it: seeded dev users have no real slack ids to check
+export const ndaEnforced = () => !dev && ndaEnabled();
 export const ndaSignUrl = () => ndaBase();
 
 export const isNdaExempt = (email: string) => email.toLowerCase().endsWith('@hackclub.com');

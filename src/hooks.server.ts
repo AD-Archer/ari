@@ -6,7 +6,7 @@ import { sessionCookie, validateSession, type SessionWithUser } from '$lib/serve
 import { db } from '$lib/server/db';
 import { protectedResourceMetadata, authServerMetadata, baseUrl } from '$lib/server/mcp/oauth';
 import { mlog } from '$lib/server/mcp/log';
-import { ndaBlocks, wantsPage } from '$lib/server/nda';
+import { ndaBlocks, ndaEnforced, wantsPage } from '$lib/server/nda';
 import { ndaStatus } from '$lib/server/ndaGate';
 
 Sentry.init({
@@ -140,7 +140,12 @@ const appHandle: Handle = async ({ event, resolve }) => {
 		throw redirect(303, '/login');
 	}
 
-	if (sessionUser && !skipsNdaGate(path) && ndaBlocks(await ndaStatus(sessionUser))) {
+	if (
+		sessionUser &&
+		ndaEnforced() &&
+		!skipsNdaGate(path) &&
+		ndaBlocks(await ndaStatus(sessionUser))
+	) {
 		if (wantsPage(event.request.headers, event.isDataRequest)) throw redirect(303, '/nda');
 		return json({ error: 'nda_required' }, { status: 403 });
 	}
