@@ -36,16 +36,20 @@ export const GET: RequestHandler = async ({ url, params, locals }) => {
 	if (!hasPermission(user, program.id, 'SECOND_PASS')) hiddenStatuses.push('secondpass');
 	if (!hasPermission(user, program.id, 'VIEW_FRAUD')) hiddenStatuses.push('fraudreview');
 
+	// member names and emails are the roster, so they take the roster's gate
+	const canSeeReviewers = hasPermission(user, program.id, 'VIEW_REVIEWERS');
 	const [candidates, memberships] = await Promise.all([
 		searchShipCandidates(program.id, query),
-		db.membership.findMany({
-			where: {
-				programId: program.id,
-				user: { OR: [{ name: matches }, { email: matches }] }
-			},
-			include: { user: true },
-			take: 4
-		})
+		canSeeReviewers
+			? db.membership.findMany({
+					where: {
+						programId: program.id,
+						user: { OR: [{ name: matches }, { email: matches }] }
+					},
+					include: { user: true },
+					take: 4 // a short people section under the ships in the dropdown
+				})
+			: []
 	]);
 
 	// the ranking knows nothing about access: the same rules as the queue decide what is listed

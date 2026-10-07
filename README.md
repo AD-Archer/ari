@@ -4,7 +4,7 @@ ari is ship-review platform at hack club! programs use them for verifying that a
 
 you are looking right now at the web app - anything related to webhook ingestion and background work lives in [ari-webhooks](https://github.com/hackclub/ari-webhooks)!, which shares the database.
 
-there are private sections of the platform that are under a private repo, these contents are not to be shown to the public for containing fraud tooling or showing how certain flags work in specific, if you intend to work on flags, please poke this [non-jolly person](https://hackclub.enterprise.slack.com/team/U08PD2ZB3DL)
+there are private sections of the platform that are under a private repo, these contents are not to be shown to the public for containing fraud tooling or showing how certain flags work in specific, if you intend to work on flags, please ask in the Hack Club Slack
 
 ## running it locally
 

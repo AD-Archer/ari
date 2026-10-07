@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { requireOrgPermission } from '$lib/server/authz';
 import { generateMcpToken } from '$lib/server/mcp/auth';
 import { baseUrl } from '$lib/server/mcp/oauth';
+import { descendantTokenIds, revokeTokenTree } from '$lib/server/mcp/tokenLineage';
 import { ago } from '$lib/server/serialize';
 import type { PageServerLoad, Actions } from './$types';
 
@@ -16,7 +17,10 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	requireOrgPermission(locals, 'MANAGE_MCP');
 	const rows = await db.mcpToken.findMany({
 		orderBy: { createdAt: 'desc' },
-		include: { user: { select: { name: true, email: true, avatarColor: true } } }
+		include: {
+			user: { select: { name: true, email: true, avatarColor: true } },
+			parentToken: { select: { label: true, last4: true } }
+		}
 	});
 	return {
 		endpoint: `${baseUrl(url.origin)}/api/mcp`,
@@ -31,7 +35,8 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 			state: tokenState(token),
 			created: ago(token.createdAt),
 			lastUsed: token.lastUsedAt ? ago(token.lastUsedAt) : null,
-			expires: token.expiresAt ? token.expiresAt.toISOString().slice(0, 10) : null
+			expires: token.expiresAt ? token.expiresAt.toISOString().slice(0, 10) : null,
+			parent: token.parentToken ? `${token.parentToken.label} (…${token.parentToken.last4})` : null
 		}))
 	};
 };
@@ -63,15 +68,15 @@ export const actions: Actions = {
 		return { minted: true, token: raw, label };
 	},
 
-	// the row is kept for audit and fails closed on the next request
+	// the row is kept for audit and fails closed on the next request. tokens minted through
+	// the oauth flow with this one go with it
 	revoke: async ({ locals, request }) => {
 		requireOrgPermission(locals, 'MANAGE_MCP');
 		const id = String((await request.formData()).get('id') ?? '');
 		if (!id) return fail(400, { error: 'No token id.' });
-		const token = await db.mcpToken.findUnique({ where: { id }, select: { revokedAt: true } });
+		const token = await db.mcpToken.findUnique({ where: { id }, select: { id: true } });
 		if (!token) return fail(404, { error: 'No such token.' });
-		if (!token.revokedAt)
-			await db.mcpToken.update({ where: { id }, data: { revokedAt: new Date() } });
+		await revokeTokenTree(id);
 		return { success: true };
 	},
 
@@ -79,6 +84,12 @@ export const actions: Actions = {
 		requireOrgPermission(locals, 'MANAGE_MCP');
 		const id = String((await request.formData()).get('id') ?? '');
 		if (!id) return fail(400, { error: 'No token id.' });
+		// deleting the parent nulls the children's link, so they are revoked first
+		const children = await descendantTokenIds(id);
+		await db.mcpToken.updateMany({
+			where: { id: { in: children }, revokedAt: null },
+			data: { revokedAt: new Date() }
+		});
 		await db.mcpToken.deleteMany({ where: { id } });
 		return { success: true };
 	}

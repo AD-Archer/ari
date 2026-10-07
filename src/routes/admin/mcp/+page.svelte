@@ -114,6 +114,9 @@
 						<Badge>{row.canWrite ? 'read-write' : 'read-only'}</Badge>
 					</span>
 					<span class="meta mono">…{row.last4} · created {agoLabel(row.created)}</span>
+					{#if row.parent}
+						<span class="meta">derived from {row.parent}</span>
+					{/if}
 				</div>
 			{:else if column.key === 'owner'}
 				<Avatar name={row.owner} color={row.ownerColor} size="sm" decorative />

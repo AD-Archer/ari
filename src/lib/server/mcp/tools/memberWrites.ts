@@ -229,8 +229,9 @@ export const setOrgPermissions: Tool = {
 			throw new Error(`Unknown org permissions: ${unknown.join(', ')}.`);
 		}
 		const permissions = allOrgPermissions.filter((permission) => requested.includes(permission));
-		const user = await db.user.findUnique({
-			where: { email },
+		// stored emails keep the identity provider's casing
+		const user = await db.user.findFirst({
+			where: { email: { equals: email, mode: 'insensitive' } },
 			select: { id: true, orgPermissions: true }
 		});
 		if (!user) throw new Error('No account with that email has signed in yet.');
