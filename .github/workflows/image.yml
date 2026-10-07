@@ -76,3 +76,11 @@ jobs:
             echo "::error::ghcr.io/$IMAGE_NAME is public, the private image is exposed: make the package private now"
             exit 1
           fi
+
+      # only after the image exists and is confirmed private; -f fails the job when the webhook refuses
+      - name: trigger deploy
+        run: |
+          curl -fsS -X POST \
+            ${{ secrets.WEBHOOK_URL }} \
+            -H "Content-Type: application/json" \
+            -d '{"tag": "${{ github.sha }}"}'
