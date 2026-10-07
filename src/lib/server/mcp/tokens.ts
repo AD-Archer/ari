@@ -3,6 +3,7 @@ import { db } from '$lib/server/db';
 import { canAccessProgram, hasOrgPermission } from '$lib/server/authz';
 import { ago } from '$lib/server/serialize';
 import { generateMcpToken } from './auth';
+import { descendantTokenIds, revokeTokenTree } from './tokenLineage';
 
 export type TokenResult<Data = object> =
 	| ({ ok: true } & Data)
@@ -29,7 +30,10 @@ export async function tokenRows(where: Prisma.McpTokenWhereInput) {
 	const rows = await db.mcpToken.findMany({
 		where,
 		orderBy: { createdAt: 'desc' },
-		include: { user: { select: { name: true, email: true, avatarColor: true } } }
+		include: {
+			user: { select: { name: true, email: true, avatarColor: true } },
+			parentToken: { select: { label: true, last4: true } }
+		}
 	});
 	const programIds = [...new Set(rows.flatMap((token) => token.programIds))];
 	const names = new Map(
@@ -53,7 +57,8 @@ export async function tokenRows(where: Prisma.McpTokenWhereInput) {
 		created: ago(token.createdAt),
 		lastUsed: token.lastUsedAt ? ago(token.lastUsedAt) : null,
 		// yyyy-mm-dd: 10 characters
-		expires: token.expiresAt ? token.expiresAt.toISOString().slice(0, 10) : null
+		expires: token.expiresAt ? token.expiresAt.toISOString().slice(0, 10) : null,
+		parent: token.parentToken ? `${token.parentToken.label} (…${token.parentToken.last4})` : null
 	}));
 }
 
@@ -104,22 +109,32 @@ const ownedWhere = (id: string, ownerId: string | null) => ({
 	...(ownerId ? { userId: ownerId } : {})
 });
 
-// the row is kept for audit and fails closed on the next request
+// the row is kept for audit and fails closed on the next request. tokens minted through
+// the oauth flow with this one go with it
 export async function revokeToken(id: string, ownerId: string | null): Promise<TokenResult> {
 	if (!id) return { ok: false, status: 400, error: 'No token id.' };
 	const token = await db.mcpToken.findFirst({
 		where: ownedWhere(id, ownerId),
-		select: { revokedAt: true }
+		select: { id: true }
 	});
 	if (!token) return { ok: false, status: 404, error: 'No such token.' };
-	if (!token.revokedAt) {
-		await db.mcpToken.update({ where: { id }, data: { revokedAt: new Date() } });
-	}
+	await revokeTokenTree(id);
 	return { ok: true };
 }
 
 export async function deleteToken(id: string, ownerId: string | null): Promise<TokenResult> {
 	if (!id) return { ok: false, status: 400, error: 'No token id.' };
-	await db.mcpToken.deleteMany({ where: ownedWhere(id, ownerId) });
+	const token = await db.mcpToken.findFirst({
+		where: ownedWhere(id, ownerId),
+		select: { id: true }
+	});
+	if (!token) return { ok: true };
+	// deleting the parent nulls the children's link, so they are revoked first
+	const children = await descendantTokenIds(id);
+	await db.mcpToken.updateMany({
+		where: { id: { in: children }, revokedAt: null },
+		data: { revokedAt: new Date() }
+	});
+	await db.mcpToken.deleteMany({ where: { id } });
 	return { ok: true };
 }

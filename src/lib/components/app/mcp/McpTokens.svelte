@@ -31,6 +31,7 @@
 		created: string;
 		lastUsed: string | null;
 		expires: string | null;
+		parent: string | null;
 	}
 
 	interface Props {
@@ -132,6 +133,9 @@
 						<Badge>{row.canWrite ? 'read-write' : 'read-only'}</Badge>
 					</span>
 					<span class="meta mono">…{row.last4} · created {agoLabel(row.created)}</span>
+					{#if row.parent}
+						<span class="meta">derived from {row.parent}</span>
+					{/if}
 					{#if showOwner}
 						<span class="meta">{reachLabel(row)}</span>
 					{/if}

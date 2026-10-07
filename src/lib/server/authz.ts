@@ -72,6 +72,13 @@ export function hasAllPermissions(user: App.SessionUser, programId: string): boo
 	);
 }
 
+export function effectiveProgramPermissions(
+	user: App.SessionUser,
+	programId: string
+): ProgramPermission[] {
+	return allPermissions.filter((permission) => hasPermission(user, programId, permission));
+}
+
 export function requirePermission(
 	user: App.SessionUser,
 	programId: string,
@@ -120,7 +127,6 @@ export function trackAllowed(scope: Track[] | null, track: Track): boolean {
 	return scope === null || scope.includes(track);
 }
 
-// hides only the viewer's own ships from themselves. exempt: whoever operates the program
 export function selfReviewWhere(
 	user: App.SessionUser,
 	enabled: boolean,

@@ -21,6 +21,9 @@
 	);
 	const canAdmin = $derived(!!user && canOpenAdmin(user.orgPermissions));
 
+	// sign-out is a same-origin post: the endpoint clears the cookie and redirects
+	let logoutForm = $state<HTMLFormElement | null>(null);
+
 	const items = $derived<DropdownItem[]>([
 		...(canDocs ? [{ label: 'Docs', icon: 'book' as const, href: '/docs' }] : []),
 		...(canAdmin ? [{ label: 'Admin', icon: 'shield' as const, href: '/admin' }] : []),
@@ -30,13 +33,13 @@
 			icon: 'logout',
 			tone: 'danger',
 			separatorBefore: true,
-			// a full navigation: the endpoint clears the cookie and redirects
-			onSelect: () => window.location.assign('/auth/logout')
+			onSelect: () => logoutForm?.requestSubmit()
 		}
 	]);
 </script>
 
 {#if user}
+	<form method="post" action="/auth/logout" class="logout" bind:this={logoutForm}></form>
 	<Dropdown {items} {side} {align}>
 		{#snippet trigger(triggerProps)}
 			<Button variant="quiet" aria-label="Account: {user.name}" {...triggerProps}>
@@ -63,6 +66,9 @@
 {/if}
 
 <style>
+	.logout {
+		display: none;
+	}
 	.identity {
 		display: flex;
 		align-items: center;
