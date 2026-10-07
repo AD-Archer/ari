@@ -6,6 +6,8 @@ import { sessionCookie, validateSession, type SessionWithUser } from '$lib/serve
 import { db } from '$lib/server/db';
 import { protectedResourceMetadata, authServerMetadata, baseUrl } from '$lib/server/mcp/oauth';
 import { mlog } from '$lib/server/mcp/log';
+import { ndaBlocks, wantsPage } from '$lib/server/nda';
+import { ndaStatus } from '$lib/server/ndaGate';
 
 Sentry.init({
 	dsn: env.PUBLIC_SENTRY_DSN,
@@ -29,6 +31,8 @@ const isPublic = (path: string) =>
 	publicPaths.some((pattern) => pattern.test(path)) ||
 	path.startsWith('/_app/') ||
 	/\.[a-z0-9]+$/i.test(path);
+// the nda page and sign-out must stay reachable while a user is blocked
+const skipsNdaGate = (path: string) => path === '/' || path === '/nda' || isPublic(path);
 
 function toSessionUser(session: SessionWithUser): App.SessionUser {
 	const user = session.user;
@@ -113,10 +117,12 @@ const appHandle: Handle = async ({ event, resolve }) => {
 	const rawToken = event.cookies.get(sessionCookie);
 	event.locals.user = null;
 	event.locals.sessionId = null;
+	let sessionUser: SessionWithUser['user'] | null = null;
 
 	if (rawToken) {
 		const session = await validateSession(rawToken);
 		if (session) {
+			sessionUser = session.user;
 			event.locals.user = toSessionUser(session);
 			event.locals.sessionId = session.id;
 			// 5 minutes: 5 * 60 * 1000
@@ -132,6 +138,11 @@ const appHandle: Handle = async ({ event, resolve }) => {
 
 	if (!event.locals.user && path !== '/' && !isPublic(path)) {
 		throw redirect(303, '/login');
+	}
+
+	if (sessionUser && !skipsNdaGate(path) && ndaBlocks(await ndaStatus(sessionUser))) {
+		if (wantsPage(event.request.headers, event.isDataRequest)) throw redirect(303, '/nda');
+		return json({ error: 'nda_required' }, { status: 403 });
 	}
 
 	const response = await resolve(event);

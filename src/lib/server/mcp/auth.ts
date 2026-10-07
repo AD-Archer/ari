@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { db } from '$lib/server/db';
 import { mlog, tail4 } from '$lib/server/mcp/log';
+import { ndaBlocks } from '$lib/server/nda';
+import { ndaStatus } from '$lib/server/ndaGate';
 
 export const mcpTokenPrefix = 'ari_mcp_';
 
@@ -57,6 +59,10 @@ export async function validateMcpToken(raw: string): Promise<McpContext | null> 
 			user: token.user.email,
 			orgPermissions: token.user.orgPermissions.join(',')
 		});
+		return null;
+	}
+	if (ndaBlocks(await ndaStatus(token.user))) {
+		mlog('auth', 'reject: nda not signed', { user: token.user.email, token: token.label });
 		return null;
 	}
 	mlog('auth', 'ok', { user: token.user.email, token: token.label, canWrite: token.canWrite });

@@ -4,6 +4,7 @@
 	import NamePrompt from '$lib/components/app/NamePrompt.svelte';
 	import PrivateOverlay from '$lib/components/app/PrivateOverlay.svelte';
 	import { NavProgress, Toaster } from '$lib/components/ui';
+	import { page } from '$app/state';
 
 	let { children, data } = $props();
 </script>
@@ -12,7 +13,7 @@
 
 <NavProgress />
 <Toaster />
-{#if data.user?.namePending}
+{#if data.user?.namePending && page.url.pathname !== '/nda'}
 	<NamePrompt />
 {/if}
 

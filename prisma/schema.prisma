@@ -23,6 +23,8 @@ model User {
   createdAt       DateTime         @default(now())
   lastSeenAt      DateTime         @default(now())
   slackId         String?
+  ndaSignedAt     DateTime?
+  ndaCheckedAt    DateTime?
   account         Account?
   drafts          Draft[]
   memberships     Membership[]
