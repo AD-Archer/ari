@@ -201,11 +201,19 @@ export const readToolNames = [
 	'list_activity',
 	'submission_evidence',
 	'find_maker',
-	'reviewer_stats'
+	'reviewer_stats',
+	'get_program_settings'
 ];
 export const writeToolNames = [
 	'add_member',
 	'remove_member',
 	'set_org_permissions',
-	'requeue_submission'
+	'requeue_submission',
+	'create_program',
+	'update_program',
+	'update_program_settings',
+	'set_review_tools',
+	'upload_program_image',
+	'roll_ingest_secret',
+	'roll_outbound_secret'
 ];

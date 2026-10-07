@@ -1,4 +1,5 @@
 import { db } from '$lib/server/db';
+import { hasPermission } from '$lib/server/authz';
 import type { McpContext } from '../auth';
 
 export interface ToolSpec {
@@ -17,6 +18,20 @@ export function requireWrite(context: McpContext): void {
 	if (!context.canWrite) {
 		throw new Error('This token is read-only. Mint a read-write token to use write tools.');
 	}
+}
+
+export function requireProgramSettings(context: McpContext, programId: string): void {
+	requireWrite(context);
+	if (!hasPermission(context.user, programId, 'MANAGE_SETTINGS')) {
+		throw new Error('The token owner cannot manage settings for this program.');
+	}
+}
+
+export function unwrap<Result extends { ok: boolean }>(
+	result: Result
+): Extract<Result, { ok: true }> {
+	if (!result.ok) throw new Error((result as { error?: string }).error ?? 'The request failed.');
+	return result as Extract<Result, { ok: true }>;
 }
 
 export const submissionStatuses = [

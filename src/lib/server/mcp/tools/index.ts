@@ -11,6 +11,15 @@ import { listReviews, reviewerStats } from './reviews';
 import { getUser, listUsers, whoami } from './members';
 import { addMember, removeMember, setOrgPermissions } from './memberWrites';
 import { requeueSubmission } from './requeue';
+import { createProgramTool, updateProgramTool } from './programWrites';
+import {
+	getProgramSettings,
+	rollIngestSecretTool,
+	rollOutboundSecretTool,
+	setReviewTools,
+	updateProgramSettings,
+	uploadProgramImage
+} from './programSettings';
 import type { Tool, ToolSpec } from './shared';
 
 export type { Tool, ToolSpec } from './shared';
@@ -30,10 +39,18 @@ const tools: Tool[] = [
 	submissionEvidence,
 	findMaker,
 	reviewerStats,
+	getProgramSettings,
 	addMember,
 	removeMember,
 	setOrgPermissions,
 	requeueSubmission,
+	createProgramTool,
+	updateProgramTool,
+	updateProgramSettings,
+	setReviewTools,
+	uploadProgramImage,
+	rollIngestSecretTool,
+	rollOutboundSecretTool,
 	...privateProvider.mcpTools()
 ];
 

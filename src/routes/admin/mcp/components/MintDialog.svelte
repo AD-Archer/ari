@@ -60,7 +60,7 @@
 		/>
 		<Toggle
 			label="Read-write"
-			description="Allow write tools: add/remove members, set org role, dismiss flags. Off means read-only."
+			description="Allow write tools: create and edit programs, settings, review tools, signing secrets and members, set org role, dismiss flags. Off means read-only."
 			bind:checked={canWrite}
 		/>
 	</div>

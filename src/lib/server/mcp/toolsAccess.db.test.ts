@@ -109,7 +109,23 @@ describe('write tools', () => {
 			add_member: { program: programId, email: inviteEmail },
 			remove_member: { program: programId, email: adminEmail },
 			set_org_permissions: { email: inviteEmail, permissions: [] },
-			requeue_submission: { id: reviewedShipId, auditReason: 'nope' }
+			requeue_submission: { id: reviewedShipId, auditReason: 'nope' },
+			create_program: {
+				name: 'nope',
+				trackingStartsAt: '2026-01-01',
+				reviewersChannel: 'C0000000000'
+			},
+			update_program: { program: programId, name: 'nope' },
+			update_program_settings: { program: programId, name: 'nope' },
+			set_review_tools: { program: programId, snippets: [] },
+			upload_program_image: {
+				program: programId,
+				kind: 'icon',
+				contentType: 'image/png',
+				dataBase64: ''
+			},
+			roll_ingest_secret: { program: programId },
+			roll_outbound_secret: { program: programId }
 		};
 		for (const name of writeToolNames) {
 			expect(call(name, attempts[name])).rejects.toThrow(readOnlyMessage);

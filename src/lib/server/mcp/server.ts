@@ -47,7 +47,7 @@ export async function dispatch(
 				capabilities: { tools: { listChanged: false } },
 				serverInfo,
 				instructions:
-					'Read-only access to ari, Hack Club’s ship-review platform. Org-admin scoped. Start with list_programs, then program_stats / list_submissions / get_submission.'
+					'Org-admin access to ari, Hack Club’s ship-review platform. Start with list_programs, then program_stats / list_submissions / get_submission. Read-write tokens can also create programs and edit their settings, review tools, images, signing secrets and members: start with create_program or get_program_settings.'
 			});
 		}
 		case 'ping':
@@ -59,8 +59,9 @@ export async function dispatch(
 		}
 		case 'tools/call': {
 			const name = request.params?.name;
+			// names only: values can be secrets or whole images
 			mlog('rpc', `tools/call: ${name ?? '(missing name)'}`, {
-				args: request.params?.arguments ?? {}
+				args: Object.keys(request.params?.arguments ?? {})
 			});
 			const tool = name ? mcpTools[name] : undefined;
 			if (!tool) {
