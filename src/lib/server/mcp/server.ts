@@ -2,7 +2,7 @@ import { mcpTools, listToolSpecs } from './tools';
 import type { McpContext } from './auth';
 import { mlog } from './log';
 
-const serverInfo = { name: 'ari', version: '0.0.1' };
+export const serverInfo = { name: 'ari', version: '0.0.1' };
 const defaultProtocol = '2025-06-18';
 const supportedProtocols = new Set<unknown>(['2025-06-18', '2025-03-26', '2024-11-05']);
 

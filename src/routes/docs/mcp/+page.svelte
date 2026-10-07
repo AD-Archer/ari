@@ -1,4 +1,5 @@
 <script lang="ts">
+	import Note from '$lib/components/docs/Note.svelte';
 	import ConnectSections from './sections/ConnectSections.svelte';
 	import ProgramSections from './sections/ProgramSections.svelte';
 	import ReferenceSections from './sections/ReferenceSections.svelte';
@@ -17,6 +18,14 @@
 			Set up and run programs from a script or an AI assistant: create a program, configure its
 			review flow, add its organizers and connect its webhooks, all with one token.
 		</p>
+		<Note>
+			<p>
+				The OpenAPI description of every tool is public at
+				<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -- an absolute url to a json endpoint, not an app page -->
+				<a href={data.openApiUrl} data-sveltekit-reload>{data.openApiUrl}</a>. Import it into
+				Postman, an OpenAPI client generator or any tool that reads OpenAPI 3.1.
+			</p>
+		</Note>
 	</header>
 
 	<ConnectSections endpoint={data.endpoint} />

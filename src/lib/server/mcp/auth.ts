@@ -14,6 +14,12 @@ export function generateMcpToken(): { raw: string; hash: string; last4: string }
 	return { raw, hash: sha256(raw), last4: raw.slice(-4) };
 }
 
+export function bearerToken(request: Request): string | null {
+	const header = request.headers.get('authorization') ?? '';
+	const match = /^Bearer\s+(.+)$/i.exec(header.trim());
+	return match ? match[1].trim() : null;
+}
+
 export function hashMcpToken(raw: string): string {
 	return sha256(raw);
 }

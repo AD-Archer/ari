@@ -14,6 +14,15 @@ export const curlCall = (endpoint: string) => `curl ${endpoint} \\
     }
   }'`;
 
+export const restCall = (
+	origin: string
+) => `curl ${origin}/api/admin/tools/update_program_settings \\
+  -H "Authorization: Bearer ari_mcp_YOUR_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{ "program": "PROGRAM_ID", "secondPass": true }'`;
+
+export const openApiCall = (origin: string) => `curl ${origin}/api/openapi.json -o openapi.json`;
+
 export const callReply = `{
   "jsonrpc": "2.0",
   "id": 1,
