@@ -13,7 +13,7 @@ export interface Tool {
 	handler: (args: Record<string, unknown>, context: McpContext) => Promise<unknown>;
 }
 
-export function requireWrite(context: McpContext): void {
+export function requireWrite(context: Pick<McpContext, 'canWrite'>): void {
 	if (!context.canWrite) {
 		throw new ToolRefusal(
 			403,
